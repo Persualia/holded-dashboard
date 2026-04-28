@@ -1,0 +1,61 @@
+export type ItemType = 'income' | 'expense';
+
+export type MonthState = 'past' | 'current' | 'future';
+
+/** A single line item from the financial export — one P&L row across 12 months. */
+export interface Item {
+  /** Holded concept name (often "CODE - Customer name"). */
+  name: string;
+  /** Spanish chart of accounts code, e.g. "705101000". */
+  account: string;
+  /** Twelve monthly amounts: positive for income, negative for expense. */
+  values: number[];
+  type: ItemType;
+  /** High-level category derived from `account`. */
+  group: string;
+}
+
+/** Item with simulation overlay applied — `simMask[i]` is true if month i is overridden. */
+export interface EffectiveItem extends Item {
+  simMask: boolean[];
+}
+
+export interface Dataset {
+  /** ISO month strings, e.g. ["2026-01", …, "2026-12"]. */
+  months: string[];
+  items: Item[];
+}
+
+export interface EffectiveDataset {
+  months: string[];
+  items: EffectiveItem[];
+}
+
+/**
+ * Per-account map of monthIdx → simulated value.
+ * Stored in localStorage. Past months are rejected at the boundary.
+ */
+export type SimOverrides = Record<string, Record<number, number>>;
+
+/** Values pre-aggregated by month and by group. */
+export interface Aggregation {
+  income: number[];
+  expense: number[];
+  net: number[];
+  byGroup: Record<
+    string,
+    {
+      type: ItemType;
+      values: number[];
+      total: number;
+      items: Array<Item | EffectiveItem>;
+    }
+  >;
+  totals: {
+    income: number;
+    expense: number;
+    net: number;
+  };
+}
+
+export type ApplyScope = 'income' | 'expense' | 'all';

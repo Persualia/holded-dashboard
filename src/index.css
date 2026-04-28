@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+
+    --background: #FFFCF5;
+    --foreground: oklch(41.886% 0.053 255.824);
+
+    --card: #FEF9EB;
+    --card-foreground: oklch(41.886% 0.053 255.824);
+
+    --popover: #FFFCF5;
+    --popover-foreground: oklch(41.886% 0.053 255.824);
+
+    --primary: #2B7BB1;
+    --primary-foreground: #EEF6FB;
+
+    --secondary: #F9D477;
+    --secondary-foreground: #191201;
+
+    --muted: #FEF6E2;
+    --muted-foreground: oklch(41.886% 0.053 255.824);
+
+    --accent: #EC8783;
+    --accent-foreground: #2D0807;
+
+    --destructive: #e24e60;
+    --destructive-foreground: #FDF2F4;
+
+    --success: #5CB6C1;
+    --success-foreground: #060E0F;
+
+    --border: #FEF6E2;
+    --input: #FEF6E2;
+    --ring: #2B7BB1;
+
+    --radius: 1rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer utilities {
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+  .text-success {
+    color: var(--success);
+  }
+  .text-destructive {
+    color: var(--destructive);
+  }
+  .bg-success {
+    background-color: var(--success);
+  }
+}
