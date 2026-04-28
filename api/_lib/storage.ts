@@ -40,7 +40,7 @@ export async function streamBlob(key: string): Promise<Response | null> {
   }
   try {
     const result = await get(key, { access: 'private', useCache: false });
-    if (result.statusCode !== 200) return null;
+    if (!result || result.statusCode !== 200) return null;
     return new Response(result.stream);
   } catch {
     return null;
