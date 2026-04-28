@@ -1,7 +1,7 @@
-import { parseHoldedBuffer } from '../src/lib/xlsx';
-import { checkAuth } from './_lib/auth';
-import { BLOB_DATASET_KEY, BLOB_XLSX_KEY } from './_lib/blob';
-import { putBlob } from './_lib/storage';
+import { parseHoldedBuffer } from '../src/lib/xlsx.js';
+import { checkAuth } from './_lib/auth.js';
+import { BLOB_DATASET_KEY, BLOB_XLSX_KEY } from './_lib/blob.js';
+import { putBlob } from './_lib/storage.js';
 
 const XLSX_CONTENT_TYPE =
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';

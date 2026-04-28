@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
-import { signToken } from './_lib/auth';
+import { signToken } from './_lib/auth.js';
 
 interface LoginBody {
   username?: unknown;

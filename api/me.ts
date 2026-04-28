@@ -1,4 +1,4 @@
-import { checkAuth } from './_lib/auth';
+import { checkAuth } from './_lib/auth.js';
 
 /**
  * GET /api/me — verifies the Bearer token and returns the user, or 401.

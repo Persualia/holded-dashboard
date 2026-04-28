@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
-import { categorize } from './categorize';
-import type { Dataset, Item } from './types';
+import { categorize } from './categorize.js';
+import type { Dataset, Item } from './types.js';
 
 /**
  * Parse a Holded "Goals" xlsx export from a raw buffer (works in both browser

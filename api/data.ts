@@ -1,5 +1,5 @@
-import { BLOB_DATASET_KEY } from './_lib/blob';
-import { streamBlob } from './_lib/storage';
+import { BLOB_DATASET_KEY } from './_lib/blob.js';
+import { streamBlob } from './_lib/storage.js';
 
 const EMPTY_DATASET = { months: [], items: [] };
 

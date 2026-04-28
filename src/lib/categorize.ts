@@ -1,4 +1,4 @@
-import type { ItemType } from './types';
+import type { ItemType } from './types.js';
 
 export interface Category {
   type: ItemType;
