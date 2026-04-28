@@ -22,7 +22,7 @@ export async function putBlob(
     return;
   }
   await put(key, body, {
-    access: 'public',
+    access: 'private',
     addRandomSuffix: false,
     allowOverwrite: true,
     contentType,
