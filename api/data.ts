@@ -1,8 +1,6 @@
 import { BLOB_DATASET_KEY } from './_lib/blob';
 import { streamBlob } from './_lib/storage';
 
-export const config = { runtime: 'nodejs' };
-
 const EMPTY_DATASET = { months: [], items: [] };
 
 /**

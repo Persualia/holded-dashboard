@@ -3,8 +3,6 @@ import { checkAuth } from './_lib/auth';
 import { BLOB_DATASET_KEY, BLOB_XLSX_KEY } from './_lib/blob';
 import { putBlob } from './_lib/storage';
 
-export const config = { runtime: 'nodejs' };
-
 const XLSX_CONTENT_TYPE =
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 

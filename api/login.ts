@@ -1,8 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import { signToken } from './_lib/auth';
 
-export const config = { runtime: 'nodejs' };
-
 interface LoginBody {
   username?: unknown;
   password?: unknown;
@@ -15,12 +13,7 @@ function safeEqualString(a: string, b: string): boolean {
   return timingSafeEqual(ab, bb);
 }
 
-/**
- * POST /api/login — body { username, password }. On success returns { token }.
- * Credentials are checked against LOGIN/PASSWORD env vars; the token is an
- * HMAC-signed payload with a 30-day expiry (see api/_lib/auth.ts).
- */
-export default async function handler(req: Request): Promise<Response> {
+async function handle(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
   }
@@ -51,4 +44,20 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   return Response.json({ token: signToken(expectedUser), user: expectedUser });
+}
+
+/**
+ * POST /api/login — body { username, password }. On success returns { token }.
+ * Credentials are checked against LOGIN/PASSWORD env vars; the token is an
+ * HMAC-signed payload with a 30-day expiry (see api/_lib/auth.ts).
+ */
+export default async function handler(req: Request): Promise<Response> {
+  try {
+    return await handle(req);
+  } catch (e) {
+    const err = e as Error;
+    return new Response(`login crashed: ${err?.message ?? e}\n${err?.stack ?? ''}`, {
+      status: 500,
+    });
+  }
 }

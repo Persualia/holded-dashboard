@@ -1,7 +1,5 @@
 import { checkAuth } from './_lib/auth';
 
-export const config = { runtime: 'nodejs' };
-
 /**
  * GET /api/me — verifies the Bearer token and returns the user, or 401.
  * The frontend calls this on boot to revalidate a stored token.
