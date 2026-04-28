@@ -1,4 +1,4 @@
-import { head, put } from '@vercel/blob';
+import { get, put } from '@vercel/blob';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
@@ -39,11 +39,9 @@ export async function streamBlob(key: string): Promise<Response | null> {
     }
   }
   try {
-    const meta = await head(key);
-    const url = meta.downloadUrl ?? meta.url;
-    const res = await fetch(url);
-    if (!res.ok || !res.body) return null;
-    return new Response(res.body);
+    const result = await get(key, { access: 'private', useCache: false });
+    if (result.statusCode !== 200) return null;
+    return new Response(result.stream);
   } catch {
     return null;
   }
