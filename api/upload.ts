@@ -1,6 +1,7 @@
 import { parseHoldedBuffer } from '../src/lib/xlsx.js';
 import { checkAuth } from './_lib/auth.js';
 import { BLOB_DATASET_KEY, BLOB_XLSX_KEY } from './_lib/blob.js';
+import { toNodeHandler } from './_lib/node-adapter.js';
 import { putBlob } from './_lib/storage.js';
 
 const XLSX_CONTENT_TYPE =
@@ -15,7 +16,7 @@ const XLSX_CONTENT_TYPE =
  *
  * Parsing happens once here so reads via /api/data never touch xlsx logic.
  */
-export default async function handler(req: Request): Promise<Response> {
+async function handle(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
   }
@@ -57,3 +58,5 @@ export default async function handler(req: Request): Promise<Response> {
     months: dataset.months.length,
   });
 }
+
+export default toNodeHandler(handle);

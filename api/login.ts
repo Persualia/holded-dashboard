@@ -1,5 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import { signToken } from './_lib/auth.js';
+import { toNodeHandler } from './_lib/node-adapter.js';
 
 interface LoginBody {
   username?: unknown;
@@ -51,13 +52,4 @@ async function handle(req: Request): Promise<Response> {
  * Credentials are checked against LOGIN/PASSWORD env vars; the token is an
  * HMAC-signed payload with a 30-day expiry (see api/_lib/auth.ts).
  */
-export default async function handler(req: Request): Promise<Response> {
-  try {
-    return await handle(req);
-  } catch (e) {
-    const err = e as Error;
-    return new Response(`login crashed: ${err?.message ?? e}\n${err?.stack ?? ''}`, {
-      status: 500,
-    });
-  }
-}
+export default toNodeHandler(handle);

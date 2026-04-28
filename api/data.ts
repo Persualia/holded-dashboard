@@ -1,4 +1,5 @@
 import { BLOB_DATASET_KEY } from './_lib/blob.js';
+import { toNodeHandler } from './_lib/node-adapter.js';
 import { streamBlob } from './_lib/storage.js';
 
 const EMPTY_DATASET = { months: [], items: [] };
@@ -9,7 +10,7 @@ const EMPTY_DATASET = { months: [], items: [] };
  * The JSON is generated server-side at upload time (see /api/upload), so this
  * endpoint never parses the xlsx — it just proxies the blob payload.
  */
-export default async function handler(req: Request): Promise<Response> {
+async function handle(req: Request): Promise<Response> {
   if (req.method !== 'GET') {
     return new Response('Method not allowed', { status: 405 });
   }
@@ -29,3 +30,5 @@ export default async function handler(req: Request): Promise<Response> {
     },
   });
 }
+
+export default toNodeHandler(handle);
