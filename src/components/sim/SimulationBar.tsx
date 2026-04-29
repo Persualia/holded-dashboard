@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { Download, Eraser, FlaskConical, Percent, RotateCcw, Upload } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Download, Eraser, FlaskConical, Percent, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -28,9 +28,18 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useDatasetCtx } from '@/context/DatasetProvider';
 import { AuthRequiredError } from '@/lib/auth';
-import { CURRENT_MONTH_IDX, MONTH_LABELS_ES } from '@/lib/time';
+import { CURRENT_MONTH_IDX, CURRENT_YEAR, MONTH_LABELS_ES, MONTH_LABELS_LONG_ES } from '@/lib/time';
 import type { ApplyScope } from '@/lib/types';
+import { extractMonthFromBuffer } from '@/lib/xlsx';
 import { cn } from '@/lib/utils';
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function defaultMonthKey(): string {
+  return `${CURRENT_YEAR}-${pad2(CURRENT_MONTH_IDX + 1)}`;
+}
 
 export function SimulationBar() {
   const ds = useDatasetCtx();
@@ -40,6 +49,20 @@ export function SimulationBar() {
   const [fromMonth, setFromMonth] = useState<number>(CURRENT_MONTH_IDX);
   const [scope, setScope] = useState<ApplyScope>('income');
   const [confirmReset, setConfirmReset] = useState(false);
+
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingMonth, setPendingMonth] = useState<string>(defaultMonthKey());
+  const [uploading, setUploading] = useState(false);
+
+  // Month options for the upload dropdown — current year, all 12 months.
+  const monthOptions = useMemo(
+    () =>
+      Array.from({ length: 12 }, (_, i) => ({
+        key: `${CURRENT_YEAR}-${pad2(i + 1)}`,
+        label: `${MONTH_LABELS_LONG_ES[i]} ${CURRENT_YEAR}`,
+      })),
+    [],
+  );
 
   function applyPct() {
     ds.applyForwardPct(fromMonth, pct / 100, scope);
@@ -55,19 +78,43 @@ export function SimulationBar() {
     const f = e.target.files?.[0];
     e.target.value = '';
     if (!f) return;
+    let suggested: string | null = null;
     try {
-      await ds.loadXlsx(f);
-      toast.success(`Cargado: ${f.name}`);
+      const buf = await f.arrayBuffer();
+      suggested = extractMonthFromBuffer(buf);
+    } catch {
+      // ignore — fall back to current month
+    }
+    setPendingMonth(suggested ?? defaultMonthKey());
+    setPendingFile(f);
+  }
+
+  // Reset upload form when the dialog closes.
+  useEffect(() => {
+    if (!pendingFile) setUploading(false);
+  }, [pendingFile]);
+
+  async function confirmUpload() {
+    if (!pendingFile) return;
+    setUploading(true);
+    try {
+      await ds.loadXlsx(pendingFile, pendingMonth);
+      toast.success(`Cargado: ${pendingFile.name} (${pendingMonth})`);
+      setPendingFile(null);
     } catch (err) {
       if (err instanceof AuthRequiredError) {
         toast.error('Sesión caducada — vuelve a iniciar sesión');
-        return;
+      } else {
+        toast.error('Error subiendo el fichero', {
+          description: (err as Error).message,
+        });
       }
-      toast.error('Error leyendo el fichero', {
-        description: (err as Error).message,
-      });
+    } finally {
+      setUploading(false);
     }
   }
+
+  const willOverwrite = ds.monthsUploaded.includes(pendingMonth);
 
   return (
     <div
@@ -183,18 +230,6 @@ export function SimulationBar() {
           Borrar sim.
         </Button>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            ds.resetForecastSnapshot();
-            toast.success('Snapshot de previsiones actualizado');
-          }}
-        >
-          <RotateCcw className="mr-1 h-3.5 w-3.5" />
-          Re-snapshot
-        </Button>
-
         <input
           ref={fileRef}
           type="file"
@@ -230,6 +265,61 @@ export function SimulationBar() {
               }}
             >
               Borrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={pendingFile != null}
+        onOpenChange={(o) => {
+          if (!o && !uploading) setPendingFile(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cargar fichero del mes</DialogTitle>
+            <DialogDescription>
+              Cada mes se almacena en su propio slot. Si ya existe un fichero para ese mes, se
+              reemplazará.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-sm">
+              <div className="text-xs text-muted-foreground">Fichero</div>
+              <div className="font-mono">{pendingFile?.name ?? ''}</div>
+            </div>
+            <div>
+              <Label htmlFor="month-select" className="text-xs text-muted-foreground">
+                Mes al que pertenece
+              </Label>
+              <Select value={pendingMonth} onValueChange={setPendingMonth}>
+                <SelectTrigger id="month-select" className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {monthOptions.map((o) => (
+                    <SelectItem key={o.key} value={o.key}>
+                      {o.label}
+                      {ds.monthsUploaded.includes(o.key) ? ' · ya subido' : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {willOverwrite && (
+              <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                Ya hay un fichero para <span className="font-mono">{pendingMonth}</span>. Al
+                continuar se sobrescribirá.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" disabled={uploading} onClick={() => setPendingFile(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={confirmUpload} disabled={uploading}>
+              {uploading ? 'Subiendo…' : willOverwrite ? 'Sobrescribir' : 'Subir'}
             </Button>
           </DialogFooter>
         </DialogContent>

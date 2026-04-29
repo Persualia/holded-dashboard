@@ -65,6 +65,28 @@ export async function parseHoldedXlsx(file: File): Promise<Dataset> {
 }
 
 /**
+ * Best-effort suggestion of which YYYY-MM key a file belongs to, derived from
+ * the workbook's core properties (ModifiedDate then CreatedDate). Returns null
+ * if the metadata is missing or unparseable — the upload UI falls back to the
+ * current month in that case.
+ */
+export function extractMonthFromBuffer(buf: ArrayBuffer | Uint8Array): string | null {
+  let wb;
+  try {
+    wb = XLSX.read(buf, { type: 'array', bookProps: true });
+  } catch {
+    return null;
+  }
+  const props = wb.Props as { ModifiedDate?: unknown; CreatedDate?: unknown } | undefined;
+  const candidate = props?.ModifiedDate ?? props?.CreatedDate;
+  const d = candidate instanceof Date ? candidate : new Date(String(candidate ?? ''));
+  if (Number.isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+/**
  * Hydrate a raw JSON dataset (e.g. from /api/data or from a stored snapshot)
  * — re-categorizes in case the rules have evolved.
  */

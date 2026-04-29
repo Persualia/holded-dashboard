@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Lock } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,7 +6,8 @@ import { Separator } from '@/components/ui/separator';
 import { MonthBadge } from '@/components/sim/MonthBadge';
 import { EditableAmount } from '@/components/sim/EditableAmount';
 import { formatEUR } from '@/lib/format';
-import { MONTH_LABELS_ES, isLocked, monthState } from '@/lib/time';
+import { notableVariations } from '@/lib/narrate';
+import { MONTH_LABELS_ES, MONTH_LABELS_LONG_ES, isLocked, monthState } from '@/lib/time';
 import type { Dataset, EffectiveItem } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
@@ -17,6 +18,8 @@ interface Props {
   net: number;
   items: EffectiveItem[];
   base: Dataset;
+  /** Forecast composite (server-derived) — used to narrate real vs forecast for closed months. */
+  forecast: Dataset | null;
   open: boolean;
   hasSim: boolean;
   onToggle: () => void;
@@ -32,6 +35,7 @@ export function MonthBlock({
   net,
   items,
   base,
+  forecast,
   open,
   hasSim,
   onToggle,
@@ -45,6 +49,11 @@ export function MonthBlock({
   const monthItems = items.filter((it) => it.values[monthIdx] !== 0 || it.simMask[monthIdx]);
   const incs = monthItems.filter((it) => it.type === 'income').sort((a, b) => b.values[monthIdx] - a.values[monthIdx]);
   const exps = monthItems.filter((it) => it.type === 'expense').sort((a, b) => a.values[monthIdx] - b.values[monthIdx]);
+
+  const variations = useMemo(
+    () => (locked && forecast ? notableVariations(monthIdx, base.items, forecast.items) : []),
+    [locked, forecast, monthIdx, base.items],
+  );
 
   return (
     <div className="relative pl-10">
@@ -82,7 +91,32 @@ export function MonthBlock({
       </button>
 
       {open && (
-        <Card className="mt-2 p-4">
+        <div className="mt-2 space-y-2">
+          {variations.length > 0 && (
+            <Card className="p-4">
+              <div className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">
+                Variaciones notables · más de 1.000 €
+              </div>
+              <ul className="space-y-1 text-sm tabular-nums">
+                {variations.map((v) => (
+                  <li key={v.account} className="flex items-baseline justify-between gap-3">
+                    <span>
+                      {MONTH_LABELS_LONG_ES[monthIdx]}: {v.name}
+                    </span>
+                    <span
+                      className={cn(
+                        'font-medium',
+                        v.delta > 0 ? 'text-success' : 'text-destructive',
+                      )}
+                    >
+                      {formatEUR(v.delta, { sign: true })}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+        <Card className="p-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <div className="font-mono text-[10px] uppercase tracking-wider text-success">
@@ -144,6 +178,7 @@ export function MonthBlock({
             )}
           </div>
         </Card>
+        </div>
       )}
     </div>
   );

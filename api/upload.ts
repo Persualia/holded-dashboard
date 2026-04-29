@@ -1,6 +1,6 @@
 import { parseHoldedBuffer } from '../src/lib/xlsx.js';
 import { checkAuth } from './_lib/auth.js';
-import { BLOB_DATASET_KEY, BLOB_XLSX_KEY } from './_lib/blob.js';
+import { isValidMonthKey, jsonKey, xlsxKey } from './_lib/blob.js';
 import { toNodeHandler } from './_lib/node-adapter.js';
 import { putBlob } from './_lib/storage.js';
 
@@ -8,13 +8,15 @@ const XLSX_CONTENT_TYPE =
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 /**
- * POST /api/upload — accepts a multipart upload with a single `file` field.
+ * POST /api/upload — accepts a multipart upload with `file` (xlsx) and
+ * `month` (YYYY-MM) fields.
  *
- * The handler parses the xlsx server-side, then writes two blobs (overwrite):
- *   - data.xlsx → the original spreadsheet
- *   - data.json → the parsed Dataset, which is what the frontend reads on load
+ * The handler parses the xlsx server-side and writes two blobs (overwrite)
+ * scoped to the chosen month:
+ *   - data/YYYY-MM.xlsx → the original spreadsheet
+ *   - data/YYYY-MM.json → the parsed Dataset
  *
- * Parsing happens once here so reads via /api/data never touch xlsx logic.
+ * Re-uploading the same month replaces both, by design.
  */
 async function handle(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
@@ -36,6 +38,12 @@ async function handle(req: Request): Promise<Response> {
     return new Response('Missing "file" field', { status: 400 });
   }
 
+  const monthRaw = form.get('month');
+  const month = typeof monthRaw === 'string' ? monthRaw.trim() : '';
+  if (!isValidMonthKey(month)) {
+    return new Response('Missing or invalid "month" field (expected YYYY-MM)', { status: 400 });
+  }
+
   const buf = await file.arrayBuffer();
 
   let dataset;
@@ -48,14 +56,15 @@ async function handle(req: Request): Promise<Response> {
   const json = JSON.stringify(dataset);
 
   await Promise.all([
-    putBlob(BLOB_XLSX_KEY, buf, XLSX_CONTENT_TYPE),
-    putBlob(BLOB_DATASET_KEY, json, 'application/json'),
+    putBlob(xlsxKey(month), buf, XLSX_CONTENT_TYPE),
+    putBlob(jsonKey(month), json, 'application/json'),
   ]);
 
   return Response.json({
     ok: true,
     items: dataset.items.length,
     months: dataset.months.length,
+    monthKey: month,
   });
 }
 

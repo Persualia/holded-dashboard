@@ -70,7 +70,9 @@ export function CockpitView() {
     .map(([k, v]) => ({ name: k, total: Math.abs(v.total) }))
     .sort((a, b) => b.total - a.total);
 
-  // Closed-month accuracy
+  // Closed-month accuracy. The server fills forecast(i) === base(i) for any
+  // month it could not source from an earlier file — we treat those as
+  // "no comparison available" and filter them out.
   const closed: ClosedMonthAccuracy[] = [];
   if (aggForecast) {
     for (let i = 0; i < CURRENT_MONTH_IDX; i++) {
@@ -78,6 +80,9 @@ export function CockpitView() {
       const fcstInc = aggForecast.income[i];
       const realExp = aggBase.expense[i];
       const fcstExp = aggForecast.expense[i];
+      const hasBaseline =
+        Math.abs(realInc - fcstInc) > 0.01 || Math.abs(realExp - fcstExp) > 0.01;
+      if (!hasBaseline) continue;
       closed.push({
         monthIdx: i,
         realIncome: realInc,
@@ -89,13 +94,6 @@ export function CockpitView() {
       });
     }
   }
-  const hasMeaningfulComparison =
-    !!aggForecast &&
-    closed.some(
-      (c) =>
-        Math.abs(c.realIncome - c.forecastIncome) > 0.01 ||
-        Math.abs(c.realExpense - c.forecastExpense) > 0.01,
-    );
 
   // Alerts
   const alerts: AppAlert[] = [];
@@ -107,7 +105,7 @@ export function CockpitView() {
     });
   }
   closed.forEach((c) => {
-    if (c.incomeDiffPct != null && Math.abs(c.incomeDiffPct) > 10 && hasMeaningfulComparison) {
+    if (c.incomeDiffPct != null && Math.abs(c.incomeDiffPct) > 10) {
       alerts.push({
         kind: c.incomeDiffPct < 0 ? 'bad' : 'ok',
         text: `${MONTH_LABELS_ES[c.monthIdx]}: ingresos reales ${formatPct(c.incomeDiffPct, 0)} vs previsión.`,
@@ -220,7 +218,7 @@ export function CockpitView() {
         <AlertsPanel alerts={alerts} />
       </div>
 
-      <AccuracyPanel closed={closed} hasMeaningfulComparison={hasMeaningfulComparison} />
+      <AccuracyPanel closed={closed} />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <RankedBarsCard

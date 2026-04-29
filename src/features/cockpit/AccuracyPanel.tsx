@@ -15,11 +15,12 @@ export interface ClosedMonthAccuracy {
 
 interface Props {
   closed: ClosedMonthAccuracy[];
-  /** True iff snapshot has captured a different baseline than the current data. */
-  hasMeaningfulComparison: boolean;
 }
 
-export function AccuracyPanel({ closed, hasMeaningfulComparison }: Props) {
+/** Hide subsections whose absolute EUR delta is below this. */
+const ROW_NOISE_EUR = 0.01;
+
+export function AccuracyPanel({ closed }: Props) {
   return (
     <Card>
       <CardHeader>
@@ -31,64 +32,69 @@ export function AccuracyPanel({ closed, hasMeaningfulComparison }: Props) {
       </CardHeader>
       <CardContent>
         {closed.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Aún no hay meses cerrados en el ejercicio.</p>
-        ) : !hasMeaningfulComparison ? (
           <p className="text-sm text-muted-foreground">
-            Tu snapshot inicial coincide con los datos actuales. Sube un xlsx con valores reales actualizados o pulsa
-            <em className="not-italic"> Re-snapshot </em>
-            cuando recibas un nuevo plan para empezar a comparar.
+            Aún no hay previsiones anteriores con las que comparar. Sube ficheros de meses
+            anteriores del año para ver la desviación real vs previsto.
           </p>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {closed.map((c) => (
-              <div key={c.monthIdx} className="rounded-md border bg-background p-3">
-                <div className="text-base font-semibold">{MONTH_LABELS_ES[c.monthIdx]}</div>
-                <div className="mt-2 space-y-2">
-                  <div>
-                    <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                      Ingresos
-                    </div>
-                    <div className="flex items-baseline justify-between gap-2 text-sm tabular-nums">
-                      <span>
-                        {formatEUR(c.realIncome, { compact: true })} /{' '}
-                        <span className="text-muted-foreground">
-                          {formatEUR(c.forecastIncome, { compact: true })}
-                        </span>
-                      </span>
-                      <span
-                        className={cn(
-                          'text-sm font-medium',
-                          (c.incomeDiffPct ?? 0) >= 0 ? 'text-success' : 'text-destructive',
-                        )}
-                      >
-                        {formatPct(c.incomeDiffPct, 1)}
-                      </span>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                      Gastos
-                    </div>
-                    <div className="flex items-baseline justify-between gap-2 text-sm tabular-nums">
-                      <span>
-                        {formatEUR(c.realExpense, { compact: true })} /{' '}
-                        <span className="text-muted-foreground">
-                          {formatEUR(c.forecastExpense, { compact: true })}
-                        </span>
-                      </span>
-                      <span
-                        className={cn(
-                          'text-sm font-medium',
-                          (c.expenseDiffPct ?? 0) <= 0 ? 'text-success' : 'text-destructive',
-                        )}
-                      >
-                        {formatPct(c.expenseDiffPct, 1)}
-                      </span>
-                    </div>
+            {closed.map((c) => {
+              const showInc = Math.abs(c.realIncome - c.forecastIncome) > ROW_NOISE_EUR;
+              const showExp = Math.abs(c.realExpense - c.forecastExpense) > ROW_NOISE_EUR;
+              return (
+                <div key={c.monthIdx} className="rounded-md border bg-background p-3">
+                  <div className="text-base font-semibold">{MONTH_LABELS_ES[c.monthIdx]}</div>
+                  <div className="mt-2 space-y-2">
+                    {showInc && (
+                      <div>
+                        <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                          Ingresos
+                        </div>
+                        <div className="flex items-baseline justify-between gap-2 text-sm tabular-nums">
+                          <span>
+                            {formatEUR(c.realIncome, { compact: true })} /{' '}
+                            <span className="text-muted-foreground">
+                              {formatEUR(c.forecastIncome, { compact: true })}
+                            </span>
+                          </span>
+                          <span
+                            className={cn(
+                              'text-sm font-medium',
+                              (c.incomeDiffPct ?? 0) >= 0 ? 'text-success' : 'text-destructive',
+                            )}
+                          >
+                            {formatPct(c.incomeDiffPct, 1)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {showExp && (
+                      <div>
+                        <div className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                          Gastos
+                        </div>
+                        <div className="flex items-baseline justify-between gap-2 text-sm tabular-nums">
+                          <span>
+                            {formatEUR(c.realExpense, { compact: true })} /{' '}
+                            <span className="text-muted-foreground">
+                              {formatEUR(c.forecastExpense, { compact: true })}
+                            </span>
+                          </span>
+                          <span
+                            className={cn(
+                              'text-sm font-medium',
+                              (c.expenseDiffPct ?? 0) <= 0 ? 'text-success' : 'text-destructive',
+                            )}
+                          >
+                            {formatPct(c.expenseDiffPct, 1)}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </CardContent>

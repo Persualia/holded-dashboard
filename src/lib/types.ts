@@ -26,6 +26,26 @@ export interface Dataset {
   items: Item[];
 }
 
+/** Wire shape of an `Item` as stored in the per-month JSON cache and
+ *  exchanged with `/api/data` (no derived fields). */
+export interface PersistedItem {
+  name: string;
+  account: string;
+  values: number[];
+}
+
+export interface PersistedDataset {
+  months: string[];
+  items: PersistedItem[];
+}
+
+/** Response shape of `GET /api/data`. */
+export interface ApiDataResponse {
+  base: PersistedDataset;
+  forecast: PersistedDataset;
+  monthsUploaded: string[];
+}
+
 export interface EffectiveDataset {
   months: string[];
   items: EffectiveItem[];

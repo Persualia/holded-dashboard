@@ -26,7 +26,6 @@ export function removeKey(key: string): void {
 }
 
 export const STORAGE_KEYS = {
-  forecastSnapshot: 'hd_forecast_snapshot',
   sim: 'hd_sim',
   showSim: 'hd_show_sim',
   authToken: 'hd_auth_token',

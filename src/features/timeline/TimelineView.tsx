@@ -79,6 +79,7 @@ export function TimelineView() {
                   net={aggEff.net[i]}
                   items={ds.effective!.items}
                   base={ds.base!}
+                  forecast={ds.forecast}
                   open={openMonth === i}
                   hasSim={hasSim}
                   onToggle={() => setOpenMonth(openMonth === i ? -1 : i)}

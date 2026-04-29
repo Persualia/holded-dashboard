@@ -2,22 +2,28 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { authFetch } from '@/lib/auth';
 import { downloadCsv } from '@/lib/csv';
 import { hydrateDataset } from '@/lib/xlsx';
-import { getJSON, removeKey, setJSON, STORAGE_KEYS } from '@/lib/storage';
-import { CURRENT_MONTH_IDX, MONTH_LABELS_ES, isLocked } from '@/lib/time';
+import { getJSON, setJSON, STORAGE_KEYS } from '@/lib/storage';
+import { CURRENT_MONTH_IDX, CURRENT_YEAR, MONTH_LABELS_ES, isLocked } from '@/lib/time';
 import type {
+  ApiDataResponse,
   ApplyScope,
   Dataset,
   EffectiveDataset,
   EffectiveItem,
-  Item,
   SimOverrides,
 } from '@/lib/types';
 
 export interface UseDatasetReturn {
-  /** Raw dataset fetched from /api/data. null while loading. */
+  /** Latest uploaded dataset for the year — the "current state". null while loading. */
   base: Dataset | null;
-  /** Forecast snapshot — captured the first time the app ever loaded data. */
+  /**
+   * Forecast composite — same shape as `base`, with each closed-month column
+   * filled from the most recent file uploaded BEFORE that month. Months
+   * without an earlier source mirror `base` (no comparison). null while loading.
+   */
   forecast: Dataset | null;
+  /** Sorted list of YYYY-MM keys currently uploaded for the active year. */
+  monthsUploaded: string[];
   /** Base merged with sim overrides (when showSim). null while loading. */
   effective: EffectiveDataset | null;
   /** Per-account overrides keyed by month index. */
@@ -40,50 +46,55 @@ export interface UseDatasetReturn {
   clearSim: () => void;
   /** Download current overrides as CSV. */
   exportSim: () => void;
-  /** Re-snapshot the current base as the new forecast baseline. */
-  resetForecastSnapshot: () => void;
-  /** POST a new xlsx to /api/upload. The server parses + caches it. */
-  loadXlsx: (file: File) => Promise<void>;
+  /**
+   * POST a new xlsx to /api/upload, scoped to a YYYY-MM month key. Re-uploading
+   * the same key overwrites it server-side.
+   */
+  loadXlsx: (file: File, monthKey: string) => Promise<void>;
   /** Last error message (e.g. fetch / upload failure). */
   error: string | null;
 }
 
-interface PersistedDataset {
-  months: string[];
-  items: Array<Pick<Item, 'name' | 'account' | 'values'>>;
+interface FetchedData {
+  base: Dataset;
+  forecast: Dataset;
+  monthsUploaded: string[];
 }
 
-function stripDataset(d: Dataset): PersistedDataset {
-  return {
-    months: d.months,
-    items: d.items.map((it) => ({ name: it.name, account: it.account, values: it.values.slice() })),
-  };
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
 }
 
-async function fetchDataset(): Promise<Dataset> {
-  const res = await fetch('/api/data', { cache: 'no-store' });
+async function fetchDataset(): Promise<FetchedData> {
+  const asOf = `${CURRENT_YEAR}-${pad2(CURRENT_MONTH_IDX + 1)}`;
+  const url = `/api/data?year=${CURRENT_YEAR}&asOf=${asOf}`;
+  const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const raw = (await res.json()) as PersistedDataset;
-  return hydrateDataset(raw);
+  const raw = (await res.json()) as ApiDataResponse;
+  return {
+    base: hydrateDataset(raw.base),
+    forecast: hydrateDataset(raw.forecast),
+    monthsUploaded: raw.monthsUploaded,
+  };
 }
 
 export function useDataset(): UseDatasetReturn {
   const [base, setBase] = useState<Dataset | null>(null);
-  const [forecast, setForecast] = useState<Dataset | null>(() => {
-    const raw = getJSON<PersistedDataset | null>(STORAGE_KEYS.forecastSnapshot, null);
-    return raw ? hydrateDataset(raw) : null;
-  });
+  const [forecast, setForecast] = useState<Dataset | null>(null);
+  const [monthsUploaded, setMonthsUploaded] = useState<string[]>([]);
   const [sim, setSim] = useState<SimOverrides>(() => getJSON<SimOverrides>(STORAGE_KEYS.sim, {}));
   const [showSim, setShowSim] = useState<boolean>(() => getJSON<boolean>(STORAGE_KEYS.showSim, true));
   const [error, setError] = useState<string | null>(null);
 
-  // Initial load: always fetch from the server (which serves the cached JSON
-  // produced by the most recent upload).
+  // Initial load: fetch base + forecast composite from the server.
   useEffect(() => {
     let cancelled = false;
     fetchDataset()
-      .then((ds) => {
-        if (!cancelled) setBase(ds);
+      .then((d) => {
+        if (cancelled) return;
+        setBase(d.base);
+        setForecast(d.forecast);
+        setMonthsUploaded(d.monthsUploaded);
       })
       .catch((e: Error) => {
         if (!cancelled) setError('No se pudieron cargar los datos: ' + e.message);
@@ -92,15 +103,6 @@ export function useDataset(): UseDatasetReturn {
       cancelled = true;
     };
   }, []);
-
-  // Capture the forecast baseline the first time we ever see data.
-  useEffect(() => {
-    if (!base || forecast) return;
-    if (base.items.length === 0) return;
-    const snap = stripDataset(base);
-    setJSON(STORAGE_KEYS.forecastSnapshot, snap);
-    setForecast(hydrateDataset(snap));
-  }, [base, forecast]);
 
   // Persist sim + show toggle.
   useEffect(() => {
@@ -208,10 +210,11 @@ export function useDataset(): UseDatasetReturn {
     downloadCsv('simulacion-holded.csv', rows);
   }, [base, sim]);
 
-  const loadXlsx = useCallback(async (file: File) => {
+  const loadXlsx = useCallback(async (file: File, monthKey: string) => {
     setError(null);
     const fd = new FormData();
     fd.append('file', file);
+    fd.append('month', monthKey);
     const res = await authFetch('/api/upload', { method: 'POST', body: fd });
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
@@ -221,24 +224,16 @@ export function useDataset(): UseDatasetReturn {
       setError('Error subiendo xlsx: ' + msg);
       throw err;
     }
-    const ds = await fetchDataset();
-    setBase(ds);
+    const d = await fetchDataset();
+    setBase(d.base);
+    setForecast(d.forecast);
+    setMonthsUploaded(d.monthsUploaded);
   }, []);
-
-  const resetForecastSnapshot = useCallback(() => {
-    if (!base) {
-      removeKey(STORAGE_KEYS.forecastSnapshot);
-      setForecast(null);
-      return;
-    }
-    const snap = stripDataset(base);
-    setJSON(STORAGE_KEYS.forecastSnapshot, snap);
-    setForecast(hydrateDataset(snap));
-  }, [base]);
 
   return {
     base,
     forecast,
+    monthsUploaded,
     effective,
     sim,
     simCount,
@@ -249,7 +244,6 @@ export function useDataset(): UseDatasetReturn {
     applyForwardPct,
     clearSim,
     exportSim,
-    resetForecastSnapshot,
     loadXlsx,
     error,
   };
