@@ -53,13 +53,21 @@ export function CockpitView() {
   const monthlyAvgExp = Math.abs(totals.expense) / 12;
   const recurrentTotal = aggEffective.byGroup['Ventas recurrentes']?.total ?? 0;
   const recurrentPct = totals.income ? (recurrentTotal / totals.income) * 100 : 0;
-  const currentMonthInc = aggBase.income[CURRENT_MONTH_IDX];
-  const currentMonthIncFcst = aggForecast?.income[CURRENT_MONTH_IDX] ?? aggBase.income[CURRENT_MONTH_IDX];
 
-  // Top clients (recurrent + non-recurrent by sales amount)
+  // Top clients (recurrent + non-recurrent by sales amount). Real-to-date sums
+  // only closed months so the bar can show actual progress vs annual expectation.
   const clientsIncome = ds.effective.items
     .filter((i) => i.type === 'income' && (i.group === 'Ventas recurrentes' || i.group === 'Ventas no recurrentes'))
-    .map((i) => ({ ...i, total: i.values.reduce((a, b) => a + b, 0) }))
+    .map((i) => {
+      const baseItem = ds.base!.items.find((b) => b.account === i.account);
+      const realToDate =
+        baseItem?.values.slice(0, CURRENT_MONTH_IDX).reduce((a, b) => a + b, 0) ?? 0;
+      return {
+        ...i,
+        total: i.values.reduce((a, b) => a + b, 0),
+        realToDate,
+      };
+    })
     .filter((i) => i.total > 0)
     .sort((a, b) => b.total - a.total);
   const top5 = clientsIncome.slice(0, 5);
@@ -67,7 +75,14 @@ export function CockpitView() {
   // Expense breakdown
   const expGroups = Object.entries(aggEffective.byGroup)
     .filter(([, v]) => v.type === 'expense' && v.total < 0)
-    .map(([k, v]) => ({ name: k, total: Math.abs(v.total) }))
+    .map(([k, v]) => {
+      const realToDate = aggBase.byGroup[k]
+        ? Math.abs(
+            aggBase.byGroup[k].values.slice(0, CURRENT_MONTH_IDX).reduce((a, b) => a + b, 0),
+          )
+        : 0;
+      return { name: k, total: Math.abs(v.total), real: realToDate };
+    })
     .sort((a, b) => b.total - a.total);
 
   // Closed-month accuracy. The server fills forecast(i) === base(i) for any
@@ -153,11 +168,15 @@ export function CockpitView() {
         income={aggEffective.income}
         expense={aggEffective.expense}
         net={aggEffective.net}
+        realIncome={aggBase.income}
+        realExpense={aggBase.expense}
+        realNet={aggBase.net}
+        forecastIncome={aggForecast?.income ?? aggBase.income}
+        forecastExpense={aggForecast?.expense ?? aggBase.expense}
+        forecastNet={aggForecast?.net ?? aggBase.net}
         recurrentPct={recurrentPct}
         monthlyAvgExpense={monthlyAvgExp}
         marginPct={margin}
-        currentMonthIncome={currentMonthInc}
-        currentMonthIncomeForecast={currentMonthIncFcst}
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -165,7 +184,7 @@ export function CockpitView() {
           <CardHeader>
             <CardTitle>Ingresos · Gastos · Neto</CardTitle>
             <p className="text-xs text-muted-foreground">
-              real (sólido) · previsto (discontinuo claro) · simulado (discontinuo fuerte)
+              real (sólido) · mes en curso (discontinuo) · previsto (discontinuo claro) · simulado (discontinuo fuerte)
             </p>
           </CardHeader>
           <CardContent>
@@ -224,13 +243,21 @@ export function CockpitView() {
         <RankedBarsCard
           title="Top clientes"
           description="por ingresos del año"
-          rows={top5.map((c) => ({ label: c.name.split(' - ')[0] || c.name, value: c.total }))}
+          rows={top5.map((c) => ({
+            label: c.name.split(' - ')[0] || c.name,
+            value: c.total,
+            real: c.realToDate,
+          }))}
           color="hsl(152 60% 36%)"
         />
         <RankedBarsCard
           title="Gastos por categoría"
           description={`${expGroups.length} categorías`}
-          rows={expGroups.slice(0, 7).map((g) => ({ label: g.name, value: g.total }))}
+          rows={expGroups.slice(0, 7).map((g) => ({
+            label: g.name,
+            value: g.total,
+            real: g.real,
+          }))}
           color="hsl(0 70% 45%)"
         />
       </div>
