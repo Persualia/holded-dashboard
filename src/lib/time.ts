@@ -54,7 +54,7 @@ export function monthStateLabel(state: MonthState): string {
     case 'past':
       return 'real';
     case 'current':
-      return 'en curso';
+      return 'previsión';
     case 'future':
       return 'previsión';
   }
