@@ -195,13 +195,14 @@ interface BarListProps {
 
 function BarList({ items, monthIdx, base, locked, onOverride, color }: BarListProps) {
   const max = Math.max(...items.map((it) => Math.abs(it.values[monthIdx])), 1);
+  const labels = buildItemLabels(items);
   return (
     <ul className="mt-2 space-y-2">
       {items.map((it) => {
         const v = it.values[monthIdx];
         const orig = base.items.find((b) => b.account === it.account)?.values[monthIdx] ?? v;
         const pct = Math.min(100, (Math.abs(v) / max) * 100);
-        const label = (it.name.split(' - ')[0] || it.name).slice(0, 22);
+        const label = labels.get(it.account) ?? '';
         return (
           <li key={it.account} className="grid grid-cols-[7rem_1fr_5rem] items-center gap-2 text-xs">
             <span className="truncate" title={it.name}>
@@ -253,6 +254,7 @@ function GroupedBarList({ items, monthIdx, base, locked, onOverride, color }: Ba
         const isOpen = !!openGroups[g.group];
         const pct = Math.min(100, (Math.abs(g.total) / max) * 100);
         const itemMax = Math.max(...g.items.map((it) => Math.abs(it.values[monthIdx])), 1);
+        const childLabels = buildItemLabels(g.items);
         return (
           <li key={g.group}>
             <button
@@ -281,7 +283,7 @@ function GroupedBarList({ items, monthIdx, base, locked, onOverride, color }: Ba
                   const v = it.values[monthIdx];
                   const orig = base.items.find((b) => b.account === it.account)?.values[monthIdx] ?? v;
                   const ipct = Math.min(100, (Math.abs(v) / itemMax) * 100);
-                  const label = (it.name.split(' - ')[0] || it.name).slice(0, 22);
+                  const label = childLabels.get(it.account) ?? '';
                   return (
                     <li
                       key={it.account}
@@ -315,4 +317,27 @@ function GroupedBarList({ items, monthIdx, base, locked, onOverride, color }: Ba
       })}
     </ul>
   );
+}
+
+function buildItemLabels(items: EffectiveItem[]): Map<string, string> {
+  const beforeDash = (name: string) => {
+    const i = name.indexOf(' - ');
+    return i >= 0 ? name.slice(0, i) : name;
+  };
+  const afterDash = (name: string) => {
+    const i = name.indexOf(' - ');
+    return i >= 0 ? name.slice(i + 3) : name;
+  };
+  const counts = new Map<string, number>();
+  for (const it of items) {
+    const key = beforeDash(it.name);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const result = new Map<string, string>();
+  for (const it of items) {
+    const before = beforeDash(it.name);
+    const text = (counts.get(before) ?? 0) > 1 ? afterDash(it.name) : before;
+    result.set(it.account, text.slice(0, 22));
+  }
+  return result;
 }
