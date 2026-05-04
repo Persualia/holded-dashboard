@@ -18,6 +18,20 @@ export interface Item {
 /** Item with simulation overlay applied — `simMask[i]` is true if month i is overridden. */
 export interface EffectiveItem extends Item {
   simMask: boolean[];
+  /** True when this row was added by the user as part of the simulation (not in `base`). */
+  isSimRow?: boolean;
+}
+
+/**
+ * A row added by the user purely for simulation purposes. Values are stored in the
+ * regular `SimOverrides` map keyed by `id` (which doubles as the synthetic account).
+ */
+export interface SimRow {
+  /** Synthetic account id, e.g. "sim-<uuid>". */
+  id: string;
+  name: string;
+  group: string;
+  type: ItemType;
 }
 
 export interface Dataset {

@@ -28,7 +28,13 @@ export function PivotView() {
     return ds.effective.items.filter((it) => {
       if (filterType !== 'all' && it.type !== filterType) return false;
       if (enabledGroups && !enabledGroups.has(it.group)) return false;
-      if (activeOnly && it.values.every((v) => v === 0) && !it.simMask.some(Boolean)) return false;
+      if (
+        activeOnly &&
+        !it.isSimRow &&
+        it.values.every((v) => v === 0) &&
+        !it.simMask.some(Boolean)
+      )
+        return false;
       if (q && !it.name.toLowerCase().includes(q) && !it.account.includes(q)) return false;
       return true;
     });
@@ -133,6 +139,9 @@ export function PivotView() {
               onToggleGroup={toggleGroup}
               onOverride={ds.setOverride}
               onFillRight={onFillRight}
+              onAddSimRow={ds.addSimRow}
+              onRenameSimRow={ds.renameSimRow}
+              onDeleteSimRow={ds.deleteSimRow}
             />
           </CardContent>
         </Card>

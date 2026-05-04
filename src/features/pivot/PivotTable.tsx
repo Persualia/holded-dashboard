@@ -1,9 +1,10 @@
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronRight, Plus } from 'lucide-react';
 import { EditableAmount } from '@/components/sim/EditableAmount';
 import { GROUP_ORDER } from '@/lib/categorize';
 import { CURRENT_MONTH_IDX, MONTH_LABELS_ES, isLocked, monthState } from '@/lib/time';
 import { formatEUR } from '@/lib/format';
-import type { Dataset, EffectiveItem } from '@/lib/types';
+import type { Dataset, EffectiveItem, ItemType } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -13,6 +14,9 @@ interface Props {
   onToggleGroup: (group: string) => void;
   onOverride: (account: string, monthIdx: number, value: number | null) => void;
   onFillRight: (account: string, fromMonthIdx: number, value: number, offset: number) => boolean;
+  onAddSimRow: (group: string, type: ItemType) => string;
+  onRenameSimRow: (id: string, name: string) => void;
+  onDeleteSimRow: (id: string) => void;
 }
 
 interface GroupBucket {
@@ -32,7 +36,17 @@ export function PivotTable({
   onToggleGroup,
   onOverride,
   onFillRight,
+  onAddSimRow,
+  onRenameSimRow,
+  onDeleteSimRow,
 }: Props) {
+  const [focusRowId, setFocusRowId] = useState<string | null>(null);
+
+  function handleAddSimRow(group: string, type: ItemType) {
+    const id = onAddSimRow(group, type);
+    setFocusRowId(id);
+  }
+
   const groups: Record<string, GroupBucket> = {};
   for (const it of items) {
     const g = (groups[it.group] ??= {
@@ -87,6 +101,11 @@ export function PivotTable({
                 base={base}
                 onOverride={onOverride}
                 onFillRight={onFillRight}
+                onAddSimRow={handleAddSimRow}
+                onRenameSimRow={onRenameSimRow}
+                onDeleteSimRow={onDeleteSimRow}
+                focusRowId={focusRowId}
+                onFocusConsumed={() => setFocusRowId(null)}
               />
             );
           })}
@@ -122,6 +141,11 @@ interface GroupRowsProps {
   base: Dataset;
   onOverride: (account: string, monthIdx: number, value: number | null) => void;
   onFillRight: (account: string, fromMonthIdx: number, value: number, offset: number) => boolean;
+  onAddSimRow: (group: string, type: ItemType) => void;
+  onRenameSimRow: (id: string, name: string) => void;
+  onDeleteSimRow: (id: string) => void;
+  focusRowId: string | null;
+  onFocusConsumed: () => void;
 }
 
 function GroupRows({
@@ -133,11 +157,16 @@ function GroupRows({
   base,
   onOverride,
   onFillRight,
+  onAddSimRow,
+  onRenameSimRow,
+  onDeleteSimRow,
+  focusRowId,
+  onFocusConsumed,
 }: GroupRowsProps) {
   return (
     <>
       <tr
-        className="cursor-pointer border-t bg-secondary/40 hover:bg-secondary"
+        className="group/row cursor-pointer border-t bg-secondary/40 hover:bg-secondary"
         onClick={() => onToggleGroup(group)}
       >
         <td className={cn(stickyCol, 'bg-secondary/40 px-3 py-2 font-medium')}>
@@ -151,6 +180,19 @@ function GroupRows({
             <span className="ml-1 font-mono text-[10px] text-muted-foreground">
               · {bucket.items.length}
             </span>
+            <button
+              type="button"
+              aria-label={`Añadir fila simulada en ${group}`}
+              title="Añadir fila de simulación"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (collapsed) onToggleGroup(group);
+                onAddSimRow(group, bucket.type);
+              }}
+              className="ml-auto inline-flex h-5 w-5 items-center justify-center rounded-sm text-primary opacity-0 transition-opacity hover:bg-primary/10 focus:opacity-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-primary group-hover/row:opacity-100"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
           </span>
         </td>
         {bucket.totals.map((v, i) => (
@@ -180,11 +222,24 @@ function GroupRows({
             <tr key={it.account} className="border-t hover:bg-muted/30">
               <td
                 className={cn(stickyCol, 'px-3 py-1.5')}
-                title={`${it.account} · ${it.name}`}
+                title={
+                  it.isSimRow
+                    ? `Simulación · click para renombrar · Alt+click para eliminar`
+                    : `${it.account} · ${it.name}`
+                }
               >
-                <span className="block truncate text-xs">
-                  {it.name}
-                </span>
+                {it.isSimRow ? (
+                  <SimRowName
+                    id={it.account}
+                    name={it.name}
+                    autoFocus={focusRowId === it.account}
+                    onAutoFocusConsumed={onFocusConsumed}
+                    onRename={(n) => onRenameSimRow(it.account, n)}
+                    onDelete={() => onDeleteSimRow(it.account)}
+                  />
+                ) : (
+                  <span className="block truncate text-xs">{it.name}</span>
+                )}
               </td>
               {it.values.map((v, m) => {
                 const isSim = it.simMask[m];
@@ -220,5 +275,80 @@ function GroupRows({
           );
         })}
     </>
+  );
+}
+
+interface SimRowNameProps {
+  id: string;
+  name: string;
+  autoFocus: boolean;
+  onAutoFocusConsumed: () => void;
+  onRename: (name: string) => void;
+  onDelete: () => void;
+}
+
+function SimRowName({ id, name, autoFocus, onAutoFocusConsumed, onRename, onDelete }: SimRowNameProps) {
+  const [editing, setEditing] = useState(autoFocus);
+  const [draft, setDraft] = useState(name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (autoFocus) {
+      setEditing(true);
+      setDraft(name);
+      onAutoFocusConsumed();
+    }
+    // We only want to react when the parent flips this row's autoFocus on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFocus, id]);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  function commit() {
+    setEditing(false);
+    if (draft.trim() !== name) onRename(draft);
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commit();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            setDraft(name);
+            setEditing(false);
+          }
+        }}
+        className="w-full rounded-full border border-primary bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground shadow-sm focus:outline-none"
+      />
+    );
+  }
+
+  return (
+    <span
+      onClick={(e) => {
+        if (e.altKey) {
+          e.preventDefault();
+          onDelete();
+          return;
+        }
+        setEditing(true);
+      }}
+      className="inline-block max-w-full cursor-text truncate rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground shadow-sm"
+    >
+      {name}
+    </span>
   );
 }

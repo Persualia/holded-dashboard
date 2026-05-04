@@ -126,6 +126,12 @@ export function CockpitView() {
         text: `${MONTH_LABELS_ES[c.monthIdx]}: ingresos reales ${formatPct(c.incomeDiffPct, 0)} vs previsión.`,
       });
     }
+    if (c.expenseDiffPct != null && Math.abs(c.expenseDiffPct) > 10) {
+      alerts.push({
+        kind: c.expenseDiffPct < 0 ? 'bad' : 'ok',
+        text: `${MONTH_LABELS_ES[c.monthIdx]}: gastos reales ${formatPct(-c.expenseDiffPct, 0)} vs previsión.`,
+      });
+    }
   });
   aggEffective.net.forEach((n, i) => {
     if (n < 0)

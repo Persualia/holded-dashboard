@@ -10,7 +10,9 @@ import type {
   Dataset,
   EffectiveDataset,
   EffectiveItem,
+  ItemType,
   SimOverrides,
+  SimRow,
 } from '@/lib/types';
 
 export interface UseDatasetReturn {
@@ -42,7 +44,13 @@ export interface UseDatasetReturn {
    * Past months are skipped (silently clamped to CURRENT_MONTH_IDX).
    */
   applyForwardPct: (fromMonthIdx: number, pct: number, scope: ApplyScope) => void;
-  /** Wipe all overrides. */
+  /** Add a synthetic simulated row inside an existing group. Returns its synthetic id. */
+  addSimRow: (group: string, type: ItemType, name?: string) => string;
+  /** Rename a previously added simulated row. */
+  renameSimRow: (id: string, name: string) => void;
+  /** Remove a simulated row and any of its overridden values. */
+  deleteSimRow: (id: string) => void;
+  /** Wipe all overrides and any user-added sim rows. */
   clearSim: () => void;
   /** Download current overrides as CSV. */
   exportSim: () => void;
@@ -83,6 +91,7 @@ export function useDataset(): UseDatasetReturn {
   const [forecast, setForecast] = useState<Dataset | null>(null);
   const [monthsUploaded, setMonthsUploaded] = useState<string[]>([]);
   const [sim, setSim] = useState<SimOverrides>(() => getJSON<SimOverrides>(STORAGE_KEYS.sim, {}));
+  const [simRows, setSimRows] = useState<SimRow[]>(() => getJSON<SimRow[]>(STORAGE_KEYS.simRows, []));
   const [showSim, setShowSim] = useState<boolean>(() => getJSON<boolean>(STORAGE_KEYS.showSim, true));
   const [error, setError] = useState<string | null>(null);
 
@@ -109,10 +118,14 @@ export function useDataset(): UseDatasetReturn {
     setJSON(STORAGE_KEYS.sim, sim);
   }, [sim]);
   useEffect(() => {
+    setJSON(STORAGE_KEYS.simRows, simRows);
+  }, [simRows]);
+  useEffect(() => {
     setJSON(STORAGE_KEYS.showSim, showSim);
   }, [showSim]);
 
-  // Effective dataset: base values overridden where sim has entries (and showSim is on).
+  // Effective dataset: base values overridden where sim has entries (and showSim is on),
+  // plus any user-added simulated rows (also gated on showSim).
   const effective = useMemo<EffectiveDataset | null>(() => {
     if (!base) return null;
     const items: EffectiveItem[] = base.items.map((it) => {
@@ -129,8 +142,33 @@ export function useDataset(): UseDatasetReturn {
       }
       return { ...it, values, simMask };
     });
+    if (showSim) {
+      for (const row of simRows) {
+        const overrides = sim[row.id];
+        const values = new Array(12).fill(0) as number[];
+        const simMask = new Array(12).fill(false) as boolean[];
+        if (overrides) {
+          for (const k of Object.keys(overrides)) {
+            const idx = Number.parseInt(k, 10);
+            if (Number.isFinite(idx) && idx >= 0 && idx < 12) {
+              values[idx] = overrides[idx];
+              simMask[idx] = true;
+            }
+          }
+        }
+        items.push({
+          name: row.name,
+          account: row.id,
+          values,
+          type: row.type,
+          group: row.group,
+          simMask,
+          isSimRow: true,
+        });
+      }
+    }
     return { months: base.months, items };
-  }, [base, sim, showSim]);
+  }, [base, sim, simRows, showSim]);
 
   const simCount = useMemo(
     () => Object.values(sim).reduce((s, o) => s + Object.keys(o).length, 0),
@@ -184,7 +222,37 @@ export function useDataset(): UseDatasetReturn {
     [base],
   );
 
-  const clearSim = useCallback(() => setSim({}), []);
+  const addSimRow = useCallback(
+    (group: string, type: ItemType, name?: string): string => {
+      const id =
+        typeof crypto !== 'undefined' && 'randomUUID' in crypto
+          ? `sim-${crypto.randomUUID()}`
+          : `sim-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      setSimRows((prev) => [...prev, { id, name: name ?? 'Nueva simulación', group, type }]);
+      return id;
+    },
+    [],
+  );
+
+  const renameSimRow = useCallback((id: string, name: string) => {
+    const trimmed = name.trim() || 'Nueva simulación';
+    setSimRows((prev) => prev.map((r) => (r.id === id ? { ...r, name: trimmed } : r)));
+  }, []);
+
+  const deleteSimRow = useCallback((id: string) => {
+    setSimRows((prev) => prev.filter((r) => r.id !== id));
+    setSim((prev) => {
+      if (!(id in prev)) return prev;
+      const copy = { ...prev };
+      delete copy[id];
+      return copy;
+    });
+  }, []);
+
+  const clearSim = useCallback(() => {
+    setSim({});
+    setSimRows([]);
+  }, []);
 
   const exportSim = useCallback(() => {
     if (!base) return;
@@ -242,6 +310,9 @@ export function useDataset(): UseDatasetReturn {
     setOverride,
     setRowOverride,
     applyForwardPct,
+    addSimRow,
+    renameSimRow,
+    deleteSimRow,
     clearSim,
     exportSim,
     loadXlsx,

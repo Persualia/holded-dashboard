@@ -37,12 +37,15 @@ export function AccuracyPanel({ closed }: Props) {
             anteriores del año para ver la desviación real vs previsto.
           </p>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {closed.map((c) => {
+          <div className="flex gap-3 overflow-x-auto pb-1">
+            {[...closed].reverse().map((c) => {
               const showInc = Math.abs(c.realIncome - c.forecastIncome) > ROW_NOISE_EUR;
               const showExp = Math.abs(c.realExpense - c.forecastExpense) > ROW_NOISE_EUR;
               return (
-                <div key={c.monthIdx} className="rounded-md border bg-background p-3">
+                <div
+                  key={c.monthIdx}
+                  className="w-[280px] shrink-0 rounded-md border bg-background p-3"
+                >
                   <div className="text-base font-semibold">{MONTH_LABELS_ES[c.monthIdx]}</div>
                   <div className="mt-2 space-y-2">
                     {showInc && (
@@ -83,10 +86,10 @@ export function AccuracyPanel({ closed }: Props) {
                           <span
                             className={cn(
                               'text-sm font-medium',
-                              (c.expenseDiffPct ?? 0) <= 0 ? 'text-success' : 'text-destructive',
+                              (c.expenseDiffPct ?? 0) >= 0 ? 'text-success' : 'text-destructive',
                             )}
                           >
-                            {formatPct(c.expenseDiffPct, 1)}
+                            {formatPct(c.expenseDiffPct == null ? null : -c.expenseDiffPct, 1)}
                           </span>
                         </div>
                       </div>

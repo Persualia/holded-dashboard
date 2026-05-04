@@ -27,6 +27,7 @@ export function removeKey(key: string): void {
 
 export const STORAGE_KEYS = {
   sim: 'hd_sim',
+  simRows: 'hd_sim_rows',
   showSim: 'hd_show_sim',
   authToken: 'hd_auth_token',
 } as const;
