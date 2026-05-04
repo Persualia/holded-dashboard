@@ -31,11 +31,11 @@ export const MONTH_LABELS_LONG_ES = [
 ] as const;
 
 /**
- * Application "today" — pinned per the design brief (28 April 2026).
+ * Application "today".
  * Past months (< CURRENT_MONTH_IDX) are real & immutable;
  * current is in-progress; future is forecast.
  */
-export const TODAY = new Date(2026, 3, 28);
+export const TODAY = new Date();
 export const CURRENT_YEAR = TODAY.getFullYear();
 export const CURRENT_MONTH_IDX = TODAY.getMonth();
 
