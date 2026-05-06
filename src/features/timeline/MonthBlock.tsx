@@ -95,7 +95,7 @@ export function MonthBlock({
           {variations.length > 0 && (
             <Card className="p-4">
               <div className="mb-2 text-xs uppercase tracking-wider text-muted-foreground">
-                Variaciones notables · más de 1.000 €
+                Variaciones notables · más de 500 € (o top 5 si son menores)
               </div>
               <ul className="space-y-1 text-sm tabular-nums">
                 {variations.map((v) => (

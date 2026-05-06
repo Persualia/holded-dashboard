@@ -1,7 +1,9 @@
 import type { Item } from './types';
 
-/** Variations under this absolute EUR threshold are treated as noise. */
-const DEFAULT_THRESHOLD_EUR = 1000;
+/** Variations at/over this absolute EUR threshold are always shown. */
+const DEFAULT_THRESHOLD_EUR = 500;
+/** When variations fall below the threshold, keep this many of the largest. */
+const SMALL_TOP_N = 5;
 
 export interface MonthVariation {
   /** Holded account code, used as React key. */
@@ -21,8 +23,9 @@ function shortName(name: string): string {
 }
 
 /**
- * List per-item real-vs-forecast variations for a given month, keeping only
- * those whose absolute delta meets `thresholdEur`. Sorted by magnitude desc.
+ * List per-item real-vs-forecast variations for a given month. All variations
+ * with |delta| >= `thresholdEur` are returned; below the threshold, only the
+ * top `smallTopN` (by magnitude) are appended. Sorted by magnitude desc.
  *
  * `baseItems` is the latest snapshot ("real"); `forecastItems` is the
  * server-composed forecast for the same month.
@@ -32,17 +35,20 @@ export function notableVariations(
   baseItems: Item[],
   forecastItems: Item[],
   thresholdEur: number = DEFAULT_THRESHOLD_EUR,
+  smallTopN: number = SMALL_TOP_N,
 ): MonthVariation[] {
   const fcstByAccount = new Map(forecastItems.map((it) => [it.account, it]));
-  const out: MonthVariation[] = [];
+  const all: MonthVariation[] = [];
   for (const b of baseItems) {
     const f = fcstByAccount.get(b.account);
     const real = b.values[monthIdx] ?? 0;
     const forecast = f?.values[monthIdx] ?? real;
     const delta = real - forecast;
-    if (Math.abs(delta) < thresholdEur) continue;
-    out.push({ account: b.account, name: shortName(b.name), delta });
+    if (Math.abs(delta) < 0.005) continue;
+    all.push({ account: b.account, name: shortName(b.name), delta });
   }
-  out.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
-  return out;
+  all.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+  const big = all.filter((v) => Math.abs(v.delta) >= thresholdEur);
+  const small = all.filter((v) => Math.abs(v.delta) < thresholdEur).slice(0, smallTopN);
+  return [...big, ...small];
 }
