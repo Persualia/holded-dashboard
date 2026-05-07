@@ -1,1 +1,1 @@
-{"root":["./vite.config.ts","./api/data.ts","./api/login.ts","./api/me.ts","./api/ping.ts","./api/upload.ts","./api/_lib/auth.ts","./api/_lib/blob.ts","./api/_lib/node-adapter.ts","./api/_lib/storage.ts","./scripts/seed-blob.ts"],"version":"5.9.3"}
+{"root":["./vite.config.ts","./api/data.ts","./api/login.ts","./api/me.ts","./api/ping.ts","./api/simulations.ts","./api/upload.ts","./api/_lib/auth.ts","./api/_lib/blob.ts","./api/_lib/node-adapter.ts","./api/_lib/storage.ts","./scripts/seed-blob.ts"],"version":"5.9.3"}

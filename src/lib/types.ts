@@ -93,3 +93,52 @@ export interface Aggregation {
 }
 
 export type ApplyScope = 'income' | 'expense' | 'all';
+
+export type SimTag = 'optimista' | 'moderado' | 'conservador' | 'crisis' | 'planA' | 'neutral';
+
+/** A line item as captured inside a saved simulation snapshot. */
+export interface PersistedSimItem {
+  account: string;
+  name: string;
+  type: ItemType;
+  group: string;
+  /** Twelve effective monthly amounts at save time. */
+  values: number[];
+}
+
+/**
+ * Saved scenario as persisted server-side. We store the full predicted
+ * snapshot — every account × every month — so that later, as months close
+ * and `base` evolves, we can fairly compare what was predicted to what
+ * actually happened. `overrideKeys` records which cells the user explicitly
+ * touched, so we can rehydrate the sim into the active simulation as edits.
+ */
+export interface SavedSim {
+  id: string;
+  name: string;
+  hypothesis: string;
+  description: string;
+  tag: SimTag;
+  createdAt: number;
+  savedAtYear: number;
+  savedAtMonthIdx: number;
+  predicted: {
+    months: string[];
+    items: PersistedSimItem[];
+  };
+  /** Per-account list of monthIdx the user explicitly overrode at save time. */
+  overrideKeys: Record<string, number[]>;
+  simRows: SimRow[];
+}
+
+export interface SaveSimInput {
+  name: string;
+  hypothesis?: string;
+  description?: string;
+}
+
+export interface SimPatch {
+  name?: string;
+  hypothesis?: string;
+  description?: string;
+}

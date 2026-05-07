@@ -1,4 +1,4 @@
-import { get, list, put } from '@vercel/blob';
+import { del, get, list, put } from '@vercel/blob';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
@@ -48,6 +48,18 @@ export async function streamBlob(key: string): Promise<Response | null> {
   } catch {
     return null;
   }
+}
+
+export async function deleteBlob(key: string): Promise<void> {
+  if (useLocal) {
+    try {
+      await fs.unlink(path.join(LOCAL_ROOT, key));
+    } catch {
+      // already gone — fine
+    }
+    return;
+  }
+  await del(key);
 }
 
 export interface ListedBlob {

@@ -12,6 +12,7 @@ import { DatasetProvider, useDatasetCtx } from '@/context/DatasetProvider';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { CockpitView } from '@/features/cockpit/CockpitView';
 import { PivotView } from '@/features/pivot/PivotView';
+import { SimulationsView } from '@/features/simulations/SimulationsView';
 import { TimelineView } from '@/features/timeline/TimelineView';
 
 const LOGIN_PATH = '/login';
@@ -36,6 +37,7 @@ function Dashboard() {
             <TabsTrigger value="cockpit">Cockpit</TabsTrigger>
             <TabsTrigger value="pivot">Pivote</TabsTrigger>
             <TabsTrigger value="timeline">Timeline</TabsTrigger>
+            <TabsTrigger value="simulations">Simulaciones</TabsTrigger>
           </TabsList>
           <TabsContent value="cockpit" className="mt-2">
             <CockpitView />
@@ -45,6 +47,9 @@ function Dashboard() {
           </TabsContent>
           <TabsContent value="timeline" className="mt-2">
             <TimelineView />
+          </TabsContent>
+          <TabsContent value="simulations" className="mt-2">
+            <SimulationsView />
           </TabsContent>
         </Tabs>
       </div>

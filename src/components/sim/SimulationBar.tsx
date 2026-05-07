@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Download, Eraser, FlaskConical, Percent, Upload } from 'lucide-react';
+import { Eraser, FlaskConical, Percent, Save, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -32,6 +32,7 @@ import { CURRENT_MONTH_IDX, CURRENT_YEAR, MONTH_LABELS_ES, MONTH_LABELS_LONG_ES 
 import type { ApplyScope } from '@/lib/types';
 import { extractMonthFromBuffer } from '@/lib/xlsx';
 import { cn } from '@/lib/utils';
+import { SaveSimulationDialog } from '@/features/simulations/SaveSimulationDialog';
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
@@ -53,6 +54,7 @@ export function SimulationBar() {
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingMonth, setPendingMonth] = useState<string>(defaultMonthKey());
   const [uploading, setUploading] = useState(false);
+  const [saveOpen, setSaveOpen] = useState(false);
 
   // Month options for the upload dropdown — current year, all 12 months.
   const monthOptions = useMemo(
@@ -209,14 +211,12 @@ export function SimulationBar() {
         <Button
           variant="outline"
           size="sm"
-          onClick={() => {
-            ds.exportSim();
-            toast.success('CSV descargado');
-          }}
+          onClick={() => setSaveOpen(true)}
           disabled={ds.simCount === 0}
+          title="Guardar la foto de la simulación actual en el servidor"
         >
-          <Download className="mr-1 h-3.5 w-3.5" />
-          CSV
+          <Save className="mr-1 h-3.5 w-3.5" />
+          Guardar simulación
         </Button>
 
         <Button
@@ -324,6 +324,8 @@ export function SimulationBar() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SaveSimulationDialog open={saveOpen} onOpenChange={setSaveOpen} />
     </div>
   );
 }

@@ -27,3 +27,21 @@ export function monthKeyFromPathname(pathname: string): string | null {
   const m = /^data\/(\d{4}-(?:0[1-9]|1[0-2]))\.(?:json|xlsx)$/.exec(pathname);
   return m ? m[1] : null;
 }
+
+const SIM_ID_RE = /^sim_[A-Za-z0-9_-]{1,64}$/;
+/** Prefix used for sim listing — kept compatible with the local-fs shim's
+ *  `dirname/basename` split (always needs a non-empty filename component). */
+export const SIM_PREFIX = 'data/simulations/sim_';
+
+export function isValidSimId(id: string): boolean {
+  return SIM_ID_RE.test(id);
+}
+
+export function simKey(id: string): string {
+  return `data/simulations/${id}.json`;
+}
+
+export function simIdFromPathname(pathname: string): string | null {
+  const m = /^data\/simulations\/(sim_[A-Za-z0-9_-]{1,64})\.json$/.exec(pathname);
+  return m ? m[1] : null;
+}

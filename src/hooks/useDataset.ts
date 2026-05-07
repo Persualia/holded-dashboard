@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { authFetch } from '@/lib/auth';
-import { downloadCsv } from '@/lib/csv';
 import { hydrateDataset } from '@/lib/xlsx';
 import { getJSON, setJSON, STORAGE_KEYS } from '@/lib/storage';
-import { CURRENT_MONTH_IDX, CURRENT_YEAR, MONTH_LABELS_ES, isLocked } from '@/lib/time';
+import { CURRENT_MONTH_IDX, CURRENT_YEAR, isLocked } from '@/lib/time';
 import type {
   ApiDataResponse,
   ApplyScope,
@@ -11,7 +10,11 @@ import type {
   EffectiveDataset,
   EffectiveItem,
   ItemType,
+  PersistedSimItem,
+  SaveSimInput,
+  SavedSim,
   SimOverrides,
+  SimPatch,
   SimRow,
 } from '@/lib/types';
 
@@ -52,8 +55,6 @@ export interface UseDatasetReturn {
   deleteSimRow: (id: string) => void;
   /** Wipe all overrides and any user-added sim rows. */
   clearSim: () => void;
-  /** Download current overrides as CSV. */
-  exportSim: () => void;
   /**
    * POST a new xlsx to /api/upload, scoped to a YYYY-MM month key. Re-uploading
    * the same key overwrites it server-side.
@@ -61,6 +62,20 @@ export interface UseDatasetReturn {
   loadXlsx: (file: File, monthKey: string) => Promise<void>;
   /** Last error message (e.g. fetch / upload failure). */
   error: string | null;
+  /** Saved scenarios persisted on the server, most-recent-first. */
+  savedSims: SavedSim[];
+  savedSimsLoading: boolean;
+  /** Capture the current local sim as a named scenario stored server-side. */
+  saveSim: (input: SaveSimInput) => Promise<SavedSim>;
+  /** Rename / re-tag a saved scenario. */
+  patchSim: (id: string, patch: SimPatch) => Promise<void>;
+  /** Remove a saved scenario from the server. */
+  deleteSim: (id: string) => Promise<void>;
+  /**
+   * Replace the active local simulation (overrides + sim rows) with the saved
+   * one. The previous local sim is discarded.
+   */
+  loadSim: (sim: SavedSim) => void;
 }
 
 interface FetchedData {
@@ -94,6 +109,8 @@ export function useDataset(): UseDatasetReturn {
   const [simRows, setSimRows] = useState<SimRow[]>(() => getJSON<SimRow[]>(STORAGE_KEYS.simRows, []));
   const [showSim, setShowSim] = useState<boolean>(() => getJSON<boolean>(STORAGE_KEYS.showSim, true));
   const [error, setError] = useState<string | null>(null);
+  const [savedSims, setSavedSims] = useState<SavedSim[]>([]);
+  const [savedSimsLoading, setSavedSimsLoading] = useState<boolean>(true);
 
   // Initial load: fetch base + forecast composite from the server.
   useEffect(() => {
@@ -254,29 +271,125 @@ export function useDataset(): UseDatasetReturn {
     setSimRows([]);
   }, []);
 
-  const exportSim = useCallback(() => {
-    if (!base) return;
-    const rows: Array<Array<unknown>> = [];
-    rows.push(['Cuenta', 'Concepto', 'Mes', 'Original', 'Simulado', 'Delta']);
-    for (const acc of Object.keys(sim)) {
-      const it = base.items.find((x) => x.account === acc);
-      if (!it) continue;
-      for (const k of Object.keys(sim[acc])) {
-        const m = Number.parseInt(k, 10);
-        const orig = it.values[m] ?? 0;
-        const newVal = sim[acc][m];
-        rows.push([
-          acc,
-          it.name,
-          `${MONTH_LABELS_ES[m]} ${base.months[m] ?? ''}`,
-          orig,
-          newVal,
-          newVal - orig,
-        ]);
+  // Load saved-sim list from the server on mount.
+  useEffect(() => {
+    let cancelled = false;
+    setSavedSimsLoading(true);
+    authFetch('/api/simulations')
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as { sims: SavedSim[] };
+        if (!cancelled) setSavedSims(data.sims ?? []);
+      })
+      .catch((e: Error) => {
+        if (!cancelled) setError('No se pudieron cargar las simulaciones: ' + e.message);
+      })
+      .finally(() => {
+        if (!cancelled) setSavedSimsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const saveSim = useCallback(
+    async (input: SaveSimInput): Promise<SavedSim> => {
+      if (!base || !effective) throw new Error('Dataset no cargado todavía');
+
+      // Full predicted snapshot: every account × 12 months at "right now",
+      // with sim overrides + sim rows already merged into `effective`.
+      const predictedItems: PersistedSimItem[] = effective.items.map((it) => ({
+        account: it.account,
+        name: it.name,
+        type: it.type,
+        group: it.group,
+        values: it.values.slice(),
+      }));
+
+      const overrideKeys: Record<string, number[]> = {};
+      for (const [account, months] of Object.entries(sim)) {
+        const indexes = Object.keys(months)
+          .map((k) => Number.parseInt(k, 10))
+          .filter((m) => Number.isInteger(m) && m >= 0 && m <= 11);
+        if (indexes.length > 0) overrideKeys[account] = indexes.sort((a, b) => a - b);
       }
+
+      const body = {
+        name: input.name,
+        hypothesis: input.hypothesis ?? '',
+        description: input.description ?? '',
+        tag: 'neutral',
+        savedAtYear: CURRENT_YEAR,
+        savedAtMonthIdx: CURRENT_MONTH_IDX,
+        predicted: { months: base.months.slice(), items: predictedItems },
+        overrideKeys,
+        simRows,
+      };
+      const res = await authFetch('/api/simulations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status}${detail ? `: ${detail}` : ''}`);
+      }
+      const { sim: created } = (await res.json()) as { sim: SavedSim };
+      setSavedSims((prev) => [created, ...prev]);
+      return created;
+    },
+    [base, effective, sim, simRows],
+  );
+
+  const patchSim = useCallback(async (id: string, patch: SimPatch) => {
+    const res = await authFetch(`/api/simulations?id=${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}${detail ? `: ${detail}` : ''}`);
     }
-    downloadCsv('simulacion-holded.csv', rows);
-  }, [base, sim]);
+    const { sim: updated } = (await res.json()) as { sim: SavedSim };
+    setSavedSims((prev) => prev.map((s) => (s.id === id ? updated : s)));
+  }, []);
+
+  const deleteSim = useCallback(async (id: string) => {
+    const res = await authFetch(`/api/simulations?id=${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}${detail ? `: ${detail}` : ''}`);
+    }
+    setSavedSims((prev) => prev.filter((s) => s.id !== id));
+  }, []);
+
+  const loadSim = useCallback(
+    (s: SavedSim) => {
+      const next: SimOverrides = {};
+      const baseByAcc = new Map<string, number[]>();
+      if (base) {
+        for (const it of base.items) baseByAcc.set(it.account, it.values);
+      }
+      const predictedItems = s.predicted?.items ?? [];
+      for (const it of predictedItems) {
+        const flagged = new Set(s.overrideKeys?.[it.account] ?? []);
+        const baseVals = baseByAcc.get(it.account);
+        const cur: Record<number, number> = {};
+        for (let m = CURRENT_MONTH_IDX; m < 12; m++) {
+          const predicted = it.values[m] ?? 0;
+          const real = baseVals?.[m] ?? predicted;
+          if (flagged.has(m) || predicted !== real) cur[m] = predicted;
+        }
+        if (Object.keys(cur).length > 0) next[it.account] = cur;
+      }
+      setSim(next);
+      setSimRows(s.simRows ?? []);
+    },
+    [base],
+  );
 
   const loadXlsx = useCallback(async (file: File, monthKey: string) => {
     setError(null);
@@ -314,8 +427,13 @@ export function useDataset(): UseDatasetReturn {
     renameSimRow,
     deleteSimRow,
     clearSim,
-    exportSim,
     loadXlsx,
     error,
+    savedSims,
+    savedSimsLoading,
+    saveSim,
+    patchSim,
+    deleteSim,
+    loadSim,
   };
 }
