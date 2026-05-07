@@ -21,6 +21,7 @@ import {
 import { useDatasetCtx } from '@/context/DatasetProvider';
 import { AuthRequiredError } from '@/lib/auth';
 import { evaluateSim, SIM_COMPARE_COLORS } from '@/lib/simEvaluation';
+import { exportSimulationPdf } from '@/lib/simPdfExport';
 import { cn } from '@/lib/utils';
 import type { SavedSim } from '@/lib/types';
 import { BiasHistogram } from './BiasHistogram';
@@ -157,10 +158,16 @@ export function SimulationsView() {
     setLoadTarget(null);
   }
 
-  function exportPDF(sim: SavedSim) {
-    toast.info('Exportar PDF — pendiente de implementar', {
-      description: `Reporte de "${sim.name}".`,
-    });
+  async function exportPDF(sim: SavedSim) {
+    try {
+      const evaluation = evaluateSim(sim, ds.base);
+      await exportSimulationPdf(sim, evaluation);
+      toast.success(`PDF generado — "${sim.name}"`);
+    } catch (err) {
+      toast.error('No se pudo generar el PDF', {
+        description: (err as Error).message,
+      });
+    }
   }
 
   function exportComparisonPDF() {
