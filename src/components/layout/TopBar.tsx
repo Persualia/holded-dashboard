@@ -11,15 +11,18 @@ export function TopBar() {
 
   return (
     <header className="flex flex-wrap items-end justify-between gap-3 border-b pb-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Holded · Dashboard financiero</h1>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {base
-            ? `${base.months[0]} → ${base.months[base.months.length - 1]}`
-            : 'cargando dataset…'}
-          <span className="mx-2 text-border">·</span>
-          hoy: {dateLabel}
-        </p>
+      <div className="flex items-center gap-3">
+        <img src="/persualia-logo.svg" alt="Persualia" className="h-14 w-auto rounded-sm" />
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Persualia · Dashboard financiero</h1>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {base
+              ? `${base.months[0]} → ${base.months[base.months.length - 1]}`
+              : 'cargando dataset…'}
+            <span className="mx-2 text-border">·</span>
+            hoy: {dateLabel}
+          </p>
+        </div>
       </div>
       <div className="flex items-center gap-3">
         {user && <span className="text-xs text-muted-foreground">{user}</span>}
