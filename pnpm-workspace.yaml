@@ -1,0 +1,5 @@
+# esbuild trae su binario precompilado en @esbuild/<plataforma>, no necesita
+# ejecutar su script de postinstall. Lo marcamos como `false` (no ejecutar)
+# para que pnpm no pregunte ni falle con ERR_PNPM_IGNORED_BUILDS.
+allowBuilds:
+  esbuild: false

@@ -33,6 +33,7 @@ interface SavedSim {
   description: string;
   tag: string;
   createdAt: number;
+  updatedAt?: number;
   savedAtYear: number;
   savedAtMonthIdx: number;
   predicted: PersistedSimSnapshot;
@@ -57,6 +58,10 @@ interface PatchBody {
   hypothesis?: unknown;
   description?: unknown;
   tag?: unknown;
+  // Optional snapshot fields — when present, the sim's data is overwritten in place.
+  predicted?: unknown;
+  overrideKeys?: unknown;
+  simRows?: unknown;
 }
 
 function asString(v: unknown, max = 4096): string {
@@ -241,6 +246,16 @@ async function handlePatch(req: Request): Promise<Response> {
   if (typeof body.tag === 'string' && VALID_TAGS.has(body.tag)) {
     next.tag = body.tag;
   }
+  // Overwrite the snapshot in place when any data field is supplied. Metadata-only
+  // patches (rename / re-tag) leave the snapshot — and updatedAt — untouched.
+  const overwritesData =
+    'predicted' in body || 'overrideKeys' in body || 'simRows' in body;
+  if (overwritesData) {
+    if ('predicted' in body) next.predicted = sanitizePredicted(body.predicted);
+    if ('overrideKeys' in body) next.overrideKeys = sanitizeOverrideKeys(body.overrideKeys);
+    if ('simRows' in body) next.simRows = sanitizeSimRows(body.simRows);
+    next.updatedAt = Date.now();
+  }
   await putBlob(simKey(id), JSON.stringify(next), 'application/json');
   return Response.json({ sim: next });
 }
@@ -251,7 +266,9 @@ async function handlePatch(req: Request): Promise<Response> {
  *   POST                → create from JSON body { name, hypothesis, description, tag,
  *                         savedAtYear, savedAtMonthIdx, predicted, overrideKeys, simRows }.
  *   DELETE  ?id=sim_… → remove one.
- *   PATCH   ?id=sim_… → rename (body { name?, hypothesis?, description?, tag? }).
+ *   PATCH   ?id=sim_… → edit metadata (body { name?, hypothesis?, description?, tag? })
+ *                         and/or overwrite the snapshot in place (body
+ *                         { predicted?, overrideKeys?, simRows? }, which bumps updatedAt).
  *
  * Each sim is stored as `data/simulations/<id>.json` via the same blob shim
  * used by uploads. Auth is required for every method.

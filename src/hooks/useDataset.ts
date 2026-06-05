@@ -65,8 +65,16 @@ export interface UseDatasetReturn {
   /** Saved scenarios persisted on the server, most-recent-first. */
   savedSims: SavedSim[];
   savedSimsLoading: boolean;
-  /** Capture the current local sim as a named scenario stored server-side. */
+  /** Id of the saved sim currently loaded into the working state (null = unsaved/new). */
+  activeSimId: string | null;
+  /** The saved sim matching `activeSimId`, resolved from `savedSims` (null if none/deleted). */
+  activeSim: SavedSim | null;
+  /** True when the working state has edits not yet written back to the active sim. */
+  isDirty: boolean;
+  /** Capture the current local sim as a new named scenario; becomes the active sim. */
   saveSim: (input: SaveSimInput) => Promise<SavedSim>;
+  /** Overwrite the active sim's snapshot in place with the current working state. */
+  overwriteSim: () => Promise<SavedSim>;
   /** Rename / re-tag a saved scenario. */
   patchSim: (id: string, patch: SimPatch) => Promise<void>;
   /** Remove a saved scenario from the server. */
@@ -86,6 +94,77 @@ interface FetchedData {
 
 function pad2(n: number): string {
   return String(n).padStart(2, '0');
+}
+
+/**
+ * Order-independent fingerprint of the working simulation (overrides + sim rows).
+ * Two states with the same edits produce the same string, so comparing the
+ * current signature against the one captured at the last load/save tells us
+ * whether there are unsaved changes.
+ */
+function simSignature(sim: SimOverrides, simRows: SimRow[]): string {
+  const simPart = Object.keys(sim)
+    .sort()
+    .map((acc) => {
+      const months = sim[acc];
+      const keys = Object.keys(months)
+        .map((k) => Number.parseInt(k, 10))
+        .sort((a, b) => a - b);
+      return `${acc}:${keys.map((k) => `${k}=${months[k]}`).join(',')}`;
+    })
+    .join(';');
+  const rowsPart = [...simRows]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((r) => `${r.id}|${r.name}|${r.group}|${r.type}`)
+    .join(';');
+  return `${simPart}#${rowsPart}`;
+}
+
+/**
+ * Merge the base dataset with the working simulation: every account gets its
+ * overridden values applied, and user-added sim rows are appended. This is the
+ * canonical "simulated reality" — it does NOT depend on the `showSim` display
+ * toggle, so it is safe to use both for the visible overlay and for persisting.
+ */
+function mergeSim(base: Dataset, sim: SimOverrides, simRows: SimRow[]): EffectiveDataset {
+  const items: EffectiveItem[] = base.items.map((it) => {
+    const overrides = sim[it.account];
+    const simMask = new Array(12).fill(false) as boolean[];
+    if (!overrides) return { ...it, simMask };
+    const values = it.values.slice();
+    for (const k of Object.keys(overrides)) {
+      const idx = Number.parseInt(k, 10);
+      if (Number.isFinite(idx) && idx >= 0 && idx < 12) {
+        values[idx] = overrides[idx];
+        simMask[idx] = true;
+      }
+    }
+    return { ...it, values, simMask };
+  });
+  for (const row of simRows) {
+    const overrides = sim[row.id];
+    const values = new Array(12).fill(0) as number[];
+    const simMask = new Array(12).fill(false) as boolean[];
+    if (overrides) {
+      for (const k of Object.keys(overrides)) {
+        const idx = Number.parseInt(k, 10);
+        if (Number.isFinite(idx) && idx >= 0 && idx < 12) {
+          values[idx] = overrides[idx];
+          simMask[idx] = true;
+        }
+      }
+    }
+    items.push({
+      name: row.name,
+      account: row.id,
+      values,
+      type: row.type,
+      group: row.group,
+      simMask,
+      isSimRow: true,
+    });
+  }
+  return { months: base.months, items };
 }
 
 async function fetchDataset(): Promise<FetchedData> {
@@ -108,6 +187,16 @@ export function useDataset(): UseDatasetReturn {
   const [sim, setSim] = useState<SimOverrides>(() => getJSON<SimOverrides>(STORAGE_KEYS.sim, {}));
   const [simRows, setSimRows] = useState<SimRow[]>(() => getJSON<SimRow[]>(STORAGE_KEYS.simRows, []));
   const [showSim, setShowSim] = useState<boolean>(() => getJSON<boolean>(STORAGE_KEYS.showSim, true));
+  const [activeSimId, setActiveSimId] = useState<string | null>(() =>
+    getJSON<string | null>(STORAGE_KEYS.activeSimId, null),
+  );
+  // Working-state fingerprint as of the last load/save. Falls back to the
+  // restored working state so a fresh session (no prior baseline) is not dirty.
+  const [baselineSig, setBaselineSig] = useState<string>(() => {
+    const stored = getJSON<string | null>(STORAGE_KEYS.simBaseline, null);
+    if (stored != null) return stored;
+    return simSignature(getJSON<SimOverrides>(STORAGE_KEYS.sim, {}), getJSON<SimRow[]>(STORAGE_KEYS.simRows, []));
+  });
   const [error, setError] = useState<string | null>(null);
   const [savedSims, setSavedSims] = useState<SavedSim[]>([]);
   const [savedSimsLoading, setSavedSimsLoading] = useState<boolean>(true);
@@ -140,52 +229,38 @@ export function useDataset(): UseDatasetReturn {
   useEffect(() => {
     setJSON(STORAGE_KEYS.showSim, showSim);
   }, [showSim]);
+  useEffect(() => {
+    setJSON(STORAGE_KEYS.activeSimId, activeSimId);
+  }, [activeSimId]);
+  useEffect(() => {
+    setJSON(STORAGE_KEYS.simBaseline, baselineSig);
+  }, [baselineSig]);
 
-  // Effective dataset: base values overridden where sim has entries (and showSim is on),
-  // plus any user-added simulated rows (also gated on showSim).
+  const currentSig = useMemo(() => simSignature(sim, simRows), [sim, simRows]);
+  const isDirty = currentSig !== baselineSig;
+  const activeSim = useMemo(
+    () => (activeSimId ? savedSims.find((s) => s.id === activeSimId) ?? null : null),
+    [activeSimId, savedSims],
+  );
+
+  // Canonical merged simulation — base + overrides + sim rows, independent of the
+  // display toggle. Used for persisting and as the source for the visible overlay.
+  const merged = useMemo<EffectiveDataset | null>(
+    () => (base ? mergeSim(base, sim, simRows) : null),
+    [base, sim, simRows],
+  );
+
+  // Effective dataset shown in the grids: the merged simulation when `showSim` is
+  // on, otherwise the untouched base (overrides/rows hidden but NOT discarded).
   const effective = useMemo<EffectiveDataset | null>(() => {
     if (!base) return null;
-    const items: EffectiveItem[] = base.items.map((it) => {
-      const overrides = sim[it.account];
-      const simMask = new Array(12).fill(false) as boolean[];
-      if (!overrides || !showSim) return { ...it, simMask };
-      const values = it.values.slice();
-      for (const k of Object.keys(overrides)) {
-        const idx = Number.parseInt(k, 10);
-        if (Number.isFinite(idx) && idx >= 0 && idx < 12) {
-          values[idx] = overrides[idx];
-          simMask[idx] = true;
-        }
-      }
-      return { ...it, values, simMask };
-    });
-    if (showSim) {
-      for (const row of simRows) {
-        const overrides = sim[row.id];
-        const values = new Array(12).fill(0) as number[];
-        const simMask = new Array(12).fill(false) as boolean[];
-        if (overrides) {
-          for (const k of Object.keys(overrides)) {
-            const idx = Number.parseInt(k, 10);
-            if (Number.isFinite(idx) && idx >= 0 && idx < 12) {
-              values[idx] = overrides[idx];
-              simMask[idx] = true;
-            }
-          }
-        }
-        items.push({
-          name: row.name,
-          account: row.id,
-          values,
-          type: row.type,
-          group: row.group,
-          simMask,
-          isSimRow: true,
-        });
-      }
-    }
+    if (showSim) return merged;
+    const items: EffectiveItem[] = base.items.map((it) => ({
+      ...it,
+      simMask: new Array(12).fill(false) as boolean[],
+    }));
     return { months: base.months, items };
-  }, [base, sim, simRows, showSim]);
+  }, [base, showSim, merged]);
 
   const simCount = useMemo(
     () => Object.values(sim).reduce((s, o) => s + Object.keys(o).length, 0),
@@ -269,6 +344,8 @@ export function useDataset(): UseDatasetReturn {
   const clearSim = useCallback(() => {
     setSim({});
     setSimRows([]);
+    setActiveSimId(null);
+    setBaselineSig(simSignature({}, []));
   }, []);
 
   // Load saved-sim list from the server on mount.
@@ -292,28 +369,39 @@ export function useDataset(): UseDatasetReturn {
     };
   }, []);
 
+  // Build the persisted snapshot (predicted × 12 months + override map + sim rows)
+  // from the current working state. Shared by "save as new" and "overwrite". Uses
+  // `merged` (not `effective`) so the saved snapshot always reflects the real
+  // overrides, regardless of whether the "ver simulación" toggle is on.
+  const buildSnapshot = useCallback(() => {
+    if (!base || !merged) throw new Error('Dataset no cargado todavía');
+
+    const predictedItems: PersistedSimItem[] = merged.items.map((it) => ({
+      account: it.account,
+      name: it.name,
+      type: it.type,
+      group: it.group,
+      values: it.values.slice(),
+    }));
+
+    const overrideKeys: Record<string, number[]> = {};
+    for (const [account, months] of Object.entries(sim)) {
+      const indexes = Object.keys(months)
+        .map((k) => Number.parseInt(k, 10))
+        .filter((m) => Number.isInteger(m) && m >= 0 && m <= 11);
+      if (indexes.length > 0) overrideKeys[account] = indexes.sort((a, b) => a - b);
+    }
+
+    return {
+      predicted: { months: base.months.slice(), items: predictedItems },
+      overrideKeys,
+      simRows,
+    };
+  }, [base, merged, sim, simRows]);
+
   const saveSim = useCallback(
     async (input: SaveSimInput): Promise<SavedSim> => {
-      if (!base || !effective) throw new Error('Dataset no cargado todavía');
-
-      // Full predicted snapshot: every account × 12 months at "right now",
-      // with sim overrides + sim rows already merged into `effective`.
-      const predictedItems: PersistedSimItem[] = effective.items.map((it) => ({
-        account: it.account,
-        name: it.name,
-        type: it.type,
-        group: it.group,
-        values: it.values.slice(),
-      }));
-
-      const overrideKeys: Record<string, number[]> = {};
-      for (const [account, months] of Object.entries(sim)) {
-        const indexes = Object.keys(months)
-          .map((k) => Number.parseInt(k, 10))
-          .filter((m) => Number.isInteger(m) && m >= 0 && m <= 11);
-        if (indexes.length > 0) overrideKeys[account] = indexes.sort((a, b) => a - b);
-      }
-
+      const snapshot = buildSnapshot();
       const body = {
         name: input.name,
         hypothesis: input.hypothesis ?? '',
@@ -321,9 +409,7 @@ export function useDataset(): UseDatasetReturn {
         tag: 'neutral',
         savedAtYear: CURRENT_YEAR,
         savedAtMonthIdx: CURRENT_MONTH_IDX,
-        predicted: { months: base.months.slice(), items: predictedItems },
-        overrideKeys,
-        simRows,
+        ...snapshot,
       };
       const res = await authFetch('/api/simulations', {
         method: 'POST',
@@ -336,10 +422,31 @@ export function useDataset(): UseDatasetReturn {
       }
       const { sim: created } = (await res.json()) as { sim: SavedSim };
       setSavedSims((prev) => [created, ...prev]);
+      // The new sim becomes the active one; the working state is now saved.
+      setActiveSimId(created.id);
+      setBaselineSig(currentSig);
       return created;
     },
-    [base, effective, sim, simRows],
+    [buildSnapshot, currentSig],
   );
+
+  const overwriteSim = useCallback(async (): Promise<SavedSim> => {
+    if (!activeSimId) throw new Error('No hay simulación activa para sobrescribir');
+    const snapshot = buildSnapshot();
+    const res = await authFetch(`/api/simulations?id=${encodeURIComponent(activeSimId)}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(snapshot),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}${detail ? `: ${detail}` : ''}`);
+    }
+    const { sim: updated } = (await res.json()) as { sim: SavedSim };
+    setSavedSims((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+    setBaselineSig(currentSig);
+    return updated;
+  }, [activeSimId, buildSnapshot, currentSig]);
 
   const patchSim = useCallback(async (id: string, patch: SimPatch) => {
     const res = await authFetch(`/api/simulations?id=${encodeURIComponent(id)}`, {
@@ -364,6 +471,9 @@ export function useDataset(): UseDatasetReturn {
       throw new Error(`HTTP ${res.status}${detail ? `: ${detail}` : ''}`);
     }
     setSavedSims((prev) => prev.filter((s) => s.id !== id));
+    // If the deleted sim was the active one, the working state becomes an
+    // unsaved/new sim — but the user's edits are kept intact.
+    setActiveSimId((cur) => (cur === id ? null : cur));
   }, []);
 
   const loadSim = useCallback(
@@ -385,8 +495,12 @@ export function useDataset(): UseDatasetReturn {
         }
         if (Object.keys(cur).length > 0) next[it.account] = cur;
       }
+      const nextRows = s.simRows ?? [];
       setSim(next);
-      setSimRows(s.simRows ?? []);
+      setSimRows(nextRows);
+      setActiveSimId(s.id);
+      // The freshly-loaded state is the new clean baseline.
+      setBaselineSig(simSignature(next, nextRows));
     },
     [base],
   );
@@ -431,7 +545,11 @@ export function useDataset(): UseDatasetReturn {
     error,
     savedSims,
     savedSimsLoading,
+    activeSimId,
+    activeSim,
+    isDirty,
     saveSim,
+    overwriteSim,
     patchSim,
     deleteSim,
     loadSim,

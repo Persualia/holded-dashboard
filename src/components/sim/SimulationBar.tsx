@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Eraser, FlaskConical, Percent, Save, Upload } from 'lucide-react';
+import { Eraser, FlaskConical, Percent, Save, SaveAll, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -55,6 +55,8 @@ export function SimulationBar() {
   const [pendingMonth, setPendingMonth] = useState<string>(defaultMonthKey());
   const [uploading, setUploading] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
+  const [confirmOverwrite, setConfirmOverwrite] = useState(false);
+  const [overwriting, setOverwriting] = useState(false);
 
   // Month options for the upload dropdown — current year, all 12 months.
   const monthOptions = useMemo(
@@ -116,7 +118,39 @@ export function SimulationBar() {
     }
   }
 
+  async function handleOverwrite() {
+    const target = ds.activeSim;
+    if (!target || overwriting) return;
+    setOverwriting(true);
+    try {
+      await ds.overwriteSim();
+      toast.success(`Sobrescrita "${target.name}"`);
+      setConfirmOverwrite(false);
+    } catch (err) {
+      if (err instanceof AuthRequiredError) {
+        toast.error('Sesión caducada — vuelve a iniciar sesión');
+      } else {
+        toast.error('No se pudo sobrescribir la simulación', {
+          description: (err as Error).message,
+        });
+      }
+    } finally {
+      setOverwriting(false);
+    }
+  }
+
   const willOverwrite = ds.monthsUploaded.includes(pendingMonth);
+  const activeSim = ds.activeSim;
+  const lastSavedTs = activeSim ? activeSim.updatedAt ?? activeSim.createdAt : null;
+  const lastSavedLabel =
+    lastSavedTs != null
+      ? new Date(lastSavedTs).toLocaleDateString('es-ES', {
+          day: 'numeric',
+          month: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : '';
 
   return (
     <div
@@ -208,15 +242,48 @@ export function SimulationBar() {
           </Label>
         </div>
 
+        {activeSim ? (
+          <div className="flex items-center gap-1.5 text-xs" title={`Simulación cargada: ${activeSim.name}`}>
+            <span className="text-muted-foreground">Editando</span>
+            <span className="max-w-[160px] truncate font-medium">{activeSim.name}</span>
+            {ds.isDirty ? (
+              <span className="font-medium text-amber-600">• sin guardar</span>
+            ) : (
+              <span className="text-emerald-600">✓ guardado</span>
+            )}
+          </div>
+        ) : ds.simCount > 0 ? (
+          <span className="text-xs text-amber-600" title="Aún no guardada como simulación">
+            sin guardar · nueva
+          </span>
+        ) : null}
+
+        {activeSim ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setConfirmOverwrite(true)}
+            disabled={!ds.isDirty}
+            title={
+              ds.isDirty
+                ? `Sobrescribir "${activeSim.name}"`
+                : 'No hay cambios sin guardar'
+            }
+          >
+            <Save className="mr-1 h-3.5 w-3.5" />
+            Guardar
+          </Button>
+        ) : null}
+
         <Button
           variant="outline"
           size="sm"
           onClick={() => setSaveOpen(true)}
           disabled={ds.simCount === 0}
-          title="Guardar la foto de la simulación actual en el servidor"
+          title="Guardar como una simulación nueva en el servidor"
         >
-          <Save className="mr-1 h-3.5 w-3.5" />
-          Guardar simulación
+          <SaveAll className="mr-1 h-3.5 w-3.5" />
+          {activeSim ? 'Guardar como…' : 'Guardar simulación'}
         </Button>
 
         <Button
@@ -242,6 +309,34 @@ export function SimulationBar() {
           Cargar xlsx
         </Button>
       </div>
+
+      <Dialog
+        open={confirmOverwrite}
+        onOpenChange={(o) => {
+          if (!overwriting) setConfirmOverwrite(o);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>¿Sobrescribir «{activeSim?.name}»?</DialogTitle>
+            <DialogDescription>
+              Se reemplazará la versión guardada
+              {lastSavedLabel ? ` (${lastSavedLabel})` : ''} con la simulación actual: {ds.simCount}{' '}
+              celda{ds.simCount === 1 ? '' : 's'} modificada{ds.simCount === 1 ? '' : 's'}. Esta
+              acción no se puede deshacer. Si quieres conservar la versión anterior, usa{' '}
+              <span className="font-medium">“Guardar como…”</span>.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" disabled={overwriting} onClick={() => setConfirmOverwrite(false)}>
+              Cancelar
+            </Button>
+            <Button disabled={overwriting} onClick={handleOverwrite}>
+              {overwriting ? 'Guardando…' : 'Sobrescribir'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={confirmReset} onOpenChange={setConfirmReset}>
         <DialogContent>
