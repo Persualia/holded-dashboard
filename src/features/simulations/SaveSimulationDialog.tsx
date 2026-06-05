@@ -28,14 +28,17 @@ export function SaveSimulationDialog({ open, onOpenChange, onSaved }: Props) {
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const activeSim = ds.activeSim;
   useEffect(() => {
     if (open) {
-      setName('');
-      setHypothesis('');
-      setDescription('');
+      // "Guardar como…" over a loaded sim: prefill from it as a starting point
+      // for the new copy. Fresh sim: start blank.
+      setName(activeSim ? `${activeSim.name} (copia)` : '');
+      setHypothesis(activeSim?.hypothesis ?? '');
+      setDescription(activeSim?.description ?? '');
       setSaving(false);
     }
-  }, [open]);
+  }, [open, activeSim]);
 
   async function handleSubmit() {
     const trimmed = name.trim();
@@ -71,8 +74,14 @@ export function SaveSimulationDialog({ open, onOpenChange, onSaved }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Guardar simulación</DialogTitle>
+          <DialogTitle>{activeSim ? 'Guardar como nueva simulación' : 'Guardar simulación'}</DialogTitle>
           <DialogDescription>
+            {activeSim ? (
+              <>
+                Se creará una simulación nueva sin tocar{' '}
+                <span className="font-medium">"{activeSim.name}"</span>.{' '}
+              </>
+            ) : null}
             Se guarda en el servidor la foto completa de tu simulación actual: {cellsCount} celda
             {cellsCount === 1 ? '' : 's'} modificada{cellsCount === 1 ? '' : 's'}
             {rowsCount > 0 ? ` · ${rowsCount} fila${rowsCount === 1 ? '' : 's'} sim` : ''}.
@@ -131,7 +140,7 @@ export function SaveSimulationDialog({ open, onOpenChange, onSaved }: Props) {
             Cancelar
           </Button>
           <Button disabled={!canSave} onClick={handleSubmit}>
-            {saving ? 'Guardando…' : 'Guardar simulación'}
+            {saving ? 'Guardando…' : activeSim ? 'Guardar como nueva' : 'Guardar simulación'}
           </Button>
         </DialogFooter>
       </DialogContent>

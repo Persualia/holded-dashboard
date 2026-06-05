@@ -29,5 +29,9 @@ export const STORAGE_KEYS = {
   sim: 'hd_sim',
   simRows: 'hd_sim_rows',
   showSim: 'hd_show_sim',
+  /** Id of the saved sim currently loaded into the working state (null = unsaved/new). */
+  activeSimId: 'hd_sim_active',
+  /** Signature of the working state as of the last load/save — used to detect unsaved edits. */
+  simBaseline: 'hd_sim_baseline',
   authToken: 'hd_auth_token',
 } as const;

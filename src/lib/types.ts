@@ -120,6 +120,8 @@ export interface SavedSim {
   description: string;
   tag: SimTag;
   createdAt: number;
+  /** Last time the snapshot was overwritten in place (absent for never-overwritten sims). */
+  updatedAt?: number;
   savedAtYear: number;
   savedAtMonthIdx: number;
   predicted: {
@@ -137,6 +139,7 @@ export interface SaveSimInput {
   description?: string;
 }
 
+/** Metadata-only edit of a saved sim (rename / re-tag). */
 export interface SimPatch {
   name?: string;
   hypothesis?: string;

@@ -339,14 +339,23 @@ export function SimulationsView() {
             <DialogDescription>
               {loadTarget ? (
                 <>
-                  Se reemplazará la simulación local
-                  {hasLocalChanges
-                    ? ` (${cellsCount} celda${cellsCount === 1 ? '' : 's'} modificada${
-                        cellsCount === 1 ? '' : 's'
-                      })`
-                    : ''}{' '}
-                  por <span className="font-medium">"{loadTarget.name}"</span>. Esta acción no se
-                  puede deshacer.
+                  {ds.isDirty ? (
+                    <>
+                      Tienes cambios sin guardar
+                      {ds.activeSim ? (
+                        <>
+                          {' '}
+                          en <span className="font-medium">"{ds.activeSim.name}"</span>
+                        </>
+                      ) : null}
+                      {cellsCount > 0
+                        ? ` (${cellsCount} celda${cellsCount === 1 ? '' : 's'})`
+                        : ''}{' '}
+                      que se perderán.{' '}
+                    </>
+                  ) : null}
+                  Se cargará <span className="font-medium">"{loadTarget.name}"</span> en su lugar.
+                  Esta acción no se puede deshacer.
                 </>
               ) : null}
             </DialogDescription>
