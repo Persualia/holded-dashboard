@@ -8,6 +8,7 @@ interface BonusWorker {
   id: string;
   name: string;
   weightPct: number;
+  lockedTotal?: number;
 }
 
 interface BonusConfig {
@@ -15,6 +16,7 @@ interface BonusConfig {
   minNetProfit: number;
   distributePct: number;
   maxDistribute: number;
+  lockTotals: boolean;
   workers: BonusWorker[];
   updatedAt?: number;
 }
@@ -24,6 +26,7 @@ const DEFAULT_CONFIG: BonusConfig = {
   minNetProfit: 0,
   distributePct: 0,
   maxDistribute: 0,
+  lockTotals: false,
   workers: [],
 };
 
@@ -45,6 +48,9 @@ function sanitizeWorkers(raw: unknown): BonusWorker[] {
       id: typeof w.id === 'string' && w.id ? w.id.slice(0, 64) : newWorkerId(),
       name: typeof w.name === 'string' ? w.name.slice(0, 120) : '',
       weightPct: num(w.weightPct, 0),
+      lockedTotal: typeof w.lockedTotal === 'number' && Number.isFinite(w.lockedTotal)
+        ? w.lockedTotal
+        : undefined,
     });
   }
   return out;
@@ -57,6 +63,7 @@ function sanitizeConfig(raw: unknown): BonusConfig {
     minNetProfit: num(obj.minNetProfit, 0),
     distributePct: num(obj.distributePct, 0),
     maxDistribute: num(obj.maxDistribute, 0),
+    lockTotals: obj.lockTotals === true,
     workers: sanitizeWorkers(obj.workers),
     updatedAt: typeof obj.updatedAt === 'number' ? obj.updatedAt : undefined,
   };

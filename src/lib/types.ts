@@ -154,11 +154,15 @@ export interface SimPatch {
 }
 
 /** A worker eligible for the bonus distribution. Weight is persisted; the euro
- *  total is derived from the current pool. */
+ *  total is normally derived from the current pool. When the config has
+ *  `lockTotals` on, `lockedTotal` is the pinned euro amount that stays fixed as
+ *  the pool changes (profit / cap / scenario), and the weight becomes derived. */
 export interface BonusWorker {
   id: string;
   name: string;
   weightPct: number;
+  /** Pinned euro total, used only while the config's `lockTotals` is true. */
+  lockedTotal?: number;
 }
 
 /** Admin-only bonus configuration, persisted server-side at data/bonus.json. */
@@ -171,6 +175,9 @@ export interface BonusConfig {
   distributePct: number;
   /** Hard cap on the bonus pool. */
   maxDistribute: number;
+  /** When true, each worker's euro total is pinned (BonusWorker.lockedTotal) and
+   *  stays fixed as the pool changes; the weight (%) becomes the derived value. */
+  lockTotals?: boolean;
   workers: BonusWorker[];
   updatedAt?: number;
 }

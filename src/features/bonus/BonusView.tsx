@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Info, Plus, Trash2 } from 'lucide-react';
+import { Info, Lock, Plus, Trash2, Unlock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -120,9 +120,22 @@ export function BonusView() {
     pool = config.maxDistribute > 0 ? Math.min(rawPool, config.maxDistribute) : rawPool;
   }
 
-  const weightSum = config.workers.reduce((s, w) => s + w.weightPct, 0);
-  const distributed = config.workers.reduce((s, w) => s + (pool * w.weightPct) / 100, 0);
+  const locked = config.lockTotals ?? false;
+
+  // While locked, the pinned euro amount is the source of truth and the weight
+  // becomes the derived value; otherwise the weight drives the euro total.
+  function workerTotal(w: BonusWorker): number {
+    return locked ? (w.lockedTotal ?? 0) : (pool * w.weightPct) / 100;
+  }
+  function workerWeight(w: BonusWorker): number {
+    if (!locked) return w.weightPct;
+    return pool > 0 ? ((w.lockedTotal ?? 0) / pool) * 100 : 0;
+  }
+
+  const weightSum = config.workers.reduce((s, w) => s + workerWeight(w), 0);
+  const distributed = config.workers.reduce((s, w) => s + workerTotal(w), 0);
   const hasDistribution = distributed > 0;
+  const overPool = locked && pool > 0 && distributed - pool > 0.01;
 
   // The bonus is a deductible expense: it lowers the taxable base, so corporate
   // tax applies to what's left after distributing it.
@@ -134,15 +147,46 @@ export function BonusView() {
   }
   function addWorker() {
     update({
-      workers: [...config.workers, { id: crypto.randomUUID(), name: '', weightPct: 0 }],
+      workers: [
+        ...config.workers,
+        { id: crypto.randomUUID(), name: '', weightPct: 0, lockedTotal: 0 },
+      ],
     });
   }
   function removeWorker(id: string) {
     update({ workers: config.workers.filter((w) => w.id !== id) });
   }
+  function setWorkerWeight(w: BonusWorker, weightPct: number) {
+    if (locked) {
+      // Editing a weight re-pins that worker's euro total at the current pool.
+      const patch: Partial<BonusWorker> = { weightPct };
+      if (pool > 0) patch.lockedTotal = (pool * weightPct) / 100;
+      updateWorker(w.id, patch);
+    } else {
+      updateWorker(w.id, { weightPct });
+    }
+  }
   function setWorkerTotal(w: BonusWorker, total: number) {
     const weightPct = pool > 0 ? (total / pool) * 100 : w.weightPct;
-    updateWorker(w.id, { weightPct });
+    updateWorker(w.id, locked ? { lockedTotal: total, weightPct } : { weightPct });
+  }
+  function toggleLock() {
+    if (locked) {
+      // Unlock: back-derive each weight from its pinned total so nothing jumps.
+      update({
+        lockTotals: false,
+        workers: config.workers.map((w) => ({
+          ...w,
+          weightPct: pool > 0 ? ((w.lockedTotal ?? 0) / pool) * 100 : w.weightPct,
+        })),
+      });
+    } else {
+      // Lock: snapshot the current euro totals as the pinned amounts.
+      update({
+        lockTotals: true,
+        workers: config.workers.map((w) => ({ ...w, lockedTotal: (pool * w.weightPct) / 100 })),
+      });
+    }
   }
   function normalizeWeights() {
     if (weightSum <= 0) return;
@@ -318,7 +362,38 @@ export function BonusView() {
                   <TableRow>
                     <TableHead>Trabajador</TableHead>
                     <TableHead className="w-32">Peso (%)</TableHead>
-                    <TableHead className="w-40">Total (€)</TableHead>
+                    <TableHead className="w-40">
+                      <div className="flex items-center gap-1.5">
+                        <span>Total (€)</span>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={toggleLock}
+                              aria-pressed={locked}
+                              aria-label={locked ? 'Desbloquear totales' : 'Bloquear totales'}
+                              className={cn(
+                                'inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors',
+                                locked
+                                  ? 'bg-primary/10 text-primary'
+                                  : 'text-muted-foreground/60 hover:bg-muted hover:text-foreground',
+                              )}
+                            >
+                              {locked ? (
+                                <Lock className="h-3.5 w-3.5" />
+                              ) : (
+                                <Unlock className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-[260px] text-[11px] leading-snug">
+                            {locked
+                              ? 'Totales bloqueados: el € de cada trabajador se mantiene fijo aunque cambien el beneficio, los porcentajes o la simulación. Pulsa para desbloquear.'
+                              : 'Bloquea el total (€) de cada trabajador para conservar la previsión aunque cambien el beneficio o la simulación.'}
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                    </TableHead>
                     <TableHead className="w-12" />
                   </TableRow>
                 </TableHeader>
@@ -335,15 +410,16 @@ export function BonusView() {
                       </TableCell>
                       <TableCell>
                         <NumField
-                          value={w.weightPct}
-                          onCommit={(n) => updateWorker(w.id, { weightPct: n })}
+                          value={workerWeight(w)}
+                          onCommit={(n) => setWorkerWeight(w, n)}
                           ariaLabel={`Peso de ${w.name || 'trabajador'}`}
                         />
                       </TableCell>
                       <TableCell>
                         <NumField
-                          value={(pool * w.weightPct) / 100}
+                          value={workerTotal(w)}
                           onCommit={(n) => setWorkerTotal(w, n)}
+                          className={cn(locked && 'border-primary/40 bg-primary/5')}
                           ariaLabel={`Total de ${w.name || 'trabajador'}`}
                         />
                       </TableCell>
@@ -365,24 +441,34 @@ export function BonusView() {
             )}
 
             {config.workers.length > 0 ? (
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t pt-3 text-sm">
-                <div className="flex items-center gap-3">
-                  <span
-                    className={cn(
-                      'tabular-nums',
-                      Math.abs(weightSum - 100) < 0.01 ? 'text-success' : 'text-destructive',
-                    )}
-                  >
-                    Suma de pesos: {weightSum.toFixed(1)}%
-                  </span>
-                  <span className="text-muted-foreground tabular-nums">
-                    Repartido: {formatEUR(distributed)} / {formatEUR(pool)}
-                  </span>
+              <div className="mt-3 space-y-1.5 border-t pt-3 text-sm">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={cn(
+                        'tabular-nums',
+                        Math.abs(weightSum - 100) < 0.01 ? 'text-success' : 'text-destructive',
+                      )}
+                    >
+                      Suma de pesos: {weightSum.toFixed(1)}%
+                    </span>
+                    <span
+                      className={cn('tabular-nums', overPool ? 'text-destructive' : 'text-muted-foreground')}
+                    >
+                      Repartido: {formatEUR(distributed)} / {formatEUR(pool)}
+                    </span>
+                  </div>
+                  {!locked && Math.abs(weightSum - 100) >= 0.01 && weightSum > 0 ? (
+                    <Button variant="outline" size="sm" onClick={normalizeWeights}>
+                      Normalizar a 100%
+                    </Button>
+                  ) : null}
                 </div>
-                {Math.abs(weightSum - 100) >= 0.01 && weightSum > 0 ? (
-                  <Button variant="outline" size="sm" onClick={normalizeWeights}>
-                    Normalizar a 100%
-                  </Button>
+                {overPool ? (
+                  <p className="text-xs text-destructive">
+                    Los totales bloqueados ({formatEUR(distributed)}) superan la bolsa disponible (
+                    {formatEUR(pool)}). Se mantienen tal cual; desbloquea el candado para reajustarlos.
+                  </p>
                 ) : null}
               </div>
             ) : null}

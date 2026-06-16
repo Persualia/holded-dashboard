@@ -7,6 +7,7 @@ export const DEFAULT_BONUS_CONFIG: BonusConfig = {
   minNetProfit: 0,
   distributePct: 0,
   maxDistribute: 0,
+  lockTotals: false,
   workers: [],
 };
 
