@@ -43,11 +43,6 @@ interface Row {
   realIncome: number | null;
   realExpense: number | null;
   realNet: number | null;
-  // Segment that bridges the last fully-real month to the current (in-progress)
-  // month. Drawn dashed to communicate that the current month is still estimated.
-  currIncome: number | null;
-  currExpense: number | null;
-  currNet: number | null;
   fcstIncome: number;
   fcstExpense: number;
   fcstNet: number;
@@ -65,16 +60,12 @@ export function IncomeExpenseNetChart({
   showNet,
   height = 320,
 }: Props) {
-  const inCurrSegment = (i: number) => i === CURRENT_MONTH_IDX - 1 || i === CURRENT_MONTH_IDX;
   const data: Row[] = MONTH_LABELS_ES.map((m, i) => ({
     month: m,
     monthIdx: i,
     realIncome: i < CURRENT_MONTH_IDX ? real.income[i] ?? null : null,
     realExpense: i < CURRENT_MONTH_IDX ? Math.abs(real.expense[i] ?? 0) : null,
     realNet: i < CURRENT_MONTH_IDX ? real.net[i] ?? null : null,
-    currIncome: inCurrSegment(i) ? real.income[i] ?? null : null,
-    currExpense: inCurrSegment(i) ? Math.abs(real.expense[i] ?? 0) : null,
-    currNet: inCurrSegment(i) ? real.net[i] ?? null : null,
     fcstIncome: forecast.income[i] ?? 0,
     fcstExpense: Math.abs(forecast.expense[i] ?? 0),
     fcstNet: forecast.net[i] ?? 0,
@@ -194,51 +185,6 @@ export function IncomeExpenseNetChart({
             dot={{ r: 2.5, strokeWidth: 0 }}
             connectNulls={false}
             isAnimationActive={false}
-          />
-        )}
-
-        {/* Current-month bridge: same color/weight as real but dashed,
-            because the in-progress month is still an estimate. */}
-        {showIncome && (
-          <Line
-            type="linear"
-            dataKey="currIncome"
-            name="Ingresos en curso"
-            stroke={COLORS.income}
-            strokeWidth={2.4}
-            strokeDasharray="5 4"
-            dot={{ r: 2.5, strokeWidth: 0 }}
-            connectNulls={false}
-            isAnimationActive={false}
-            legendType="none"
-          />
-        )}
-        {showExpense && (
-          <Line
-            type="linear"
-            dataKey="currExpense"
-            name="Gastos en curso"
-            stroke={COLORS.expense}
-            strokeWidth={2.4}
-            strokeDasharray="5 4"
-            dot={{ r: 2.5, strokeWidth: 0 }}
-            connectNulls={false}
-            isAnimationActive={false}
-            legendType="none"
-          />
-        )}
-        {showNet && (
-          <Line
-            type="linear"
-            dataKey="currNet"
-            name="Neto en curso"
-            stroke={COLORS.net}
-            strokeWidth={2.4}
-            strokeDasharray="5 4"
-            dot={{ r: 2.5, strokeWidth: 0 }}
-            connectNulls={false}
-            isAnimationActive={false}
-            legendType="none"
           />
         )}
 
