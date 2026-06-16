@@ -1,5 +1,5 @@
 import { timingSafeEqual } from 'node:crypto';
-import { signToken } from './_lib/auth.js';
+import { isAdminUser, signToken } from './_lib/auth.js';
 import { toNodeHandler } from './_lib/node-adapter.js';
 
 interface LoginBody {
@@ -38,13 +38,24 @@ async function handle(req: Request): Promise<Response> {
   const username = typeof body.username === 'string' ? body.username : '';
   const password = typeof body.password === 'string' ? body.password : '';
 
-  const userOk = safeEqualString(username, expectedUser);
-  const passOk = safeEqualString(password, expectedPass);
-  if (!userOk || !passOk) {
+  // Candidate accounts: the primary user plus an optional admin account.
+  const accounts = [{ user: expectedUser, pass: expectedPass }];
+  if (process.env.ADMIN_LOGIN && process.env.ADMIN_PASSWORD) {
+    accounts.push({ user: process.env.ADMIN_LOGIN, pass: process.env.ADMIN_PASSWORD });
+  }
+
+  const matched = accounts.find(
+    (a) => safeEqualString(username, a.user) && safeEqualString(password, a.pass),
+  );
+  if (!matched) {
     return new Response('Invalid credentials', { status: 401 });
   }
 
-  return Response.json({ token: signToken(expectedUser), user: expectedUser });
+  return Response.json({
+    token: signToken(matched.user),
+    user: matched.user,
+    isAdmin: isAdminUser(matched.user),
+  });
 }
 
 /**

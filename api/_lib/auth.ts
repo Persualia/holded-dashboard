@@ -60,6 +60,16 @@ export function verifyToken(token: string | null | undefined): string | null {
   return payload.u;
 }
 
+/**
+ * True when the username matches the configured admin account (ADMIN_LOGIN).
+ * Returns false if no admin account is configured. The role is derived from
+ * env on every request so the client never hardcodes the admin username.
+ */
+export function isAdminUser(username: string | null | undefined): boolean {
+  const admin = process.env.ADMIN_LOGIN;
+  return !!admin && !!username && username === admin;
+}
+
 /** Reads the bearer token from the Authorization header, verifies it. */
 export function checkAuth(req: Request): { user: string } | Response {
   if (!process.env.AUTH_SECRET) {

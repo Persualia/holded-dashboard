@@ -113,6 +113,8 @@ export interface PersistedSimItem {
  * actually happened. `overrideKeys` records which cells the user explicitly
  * touched, so we can rehydrate the sim into the active simulation as edits.
  */
+export type SimVisibility = 'shared' | 'private';
+
 export interface SavedSim {
   id: string;
   name: string;
@@ -124,6 +126,10 @@ export interface SavedSim {
   updatedAt?: number;
   savedAtYear: number;
   savedAtMonthIdx: number;
+  /** Username that created the sim. Absent on legacy sims. */
+  owner?: string;
+  /** 'private' sims are only visible to their owner. Absent ⇒ shared. */
+  visibility?: SimVisibility;
   predicted: {
     months: string[];
     items: PersistedSimItem[];
@@ -137,6 +143,7 @@ export interface SaveSimInput {
   name: string;
   hypothesis?: string;
   description?: string;
+  visibility?: SimVisibility;
 }
 
 /** Metadata-only edit of a saved sim (rename / re-tag). */
@@ -144,4 +151,26 @@ export interface SimPatch {
   name?: string;
   hypothesis?: string;
   description?: string;
+}
+
+/** A worker eligible for the bonus distribution. Weight is persisted; the euro
+ *  total is derived from the current pool. */
+export interface BonusWorker {
+  id: string;
+  name: string;
+  weightPct: number;
+}
+
+/** Admin-only bonus configuration, persisted server-side at data/bonus.json. */
+export interface BonusConfig {
+  /** Impuesto de Sociedades rate, default 23. */
+  taxRatePct: number;
+  /** Below this after-tax net profit, nothing is distributed. */
+  minNetProfit: number;
+  /** Share of the (after-tax) profit forming the bonus pool. */
+  distributePct: number;
+  /** Hard cap on the bonus pool. */
+  maxDistribute: number;
+  workers: BonusWorker[];
+  updatedAt?: number;
 }
