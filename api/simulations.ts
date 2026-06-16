@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { checkAuth } from './_lib/auth.js';
+import { checkAuth, isAdminUser } from './_lib/auth.js';
 import { isValidSimId, SIM_PREFIX, simIdFromPathname, simKey } from './_lib/blob.js';
 import { toNodeHandler } from './_lib/node-adapter.js';
 import { deleteBlob, listBlobs, putBlob, streamBlob } from './_lib/storage.js';
@@ -26,6 +26,8 @@ interface PersistedSimSnapshot {
   items: PersistedSimItem[];
 }
 
+type SimVisibility = 'shared' | 'private';
+
 interface SavedSim {
   id: string;
   name: string;
@@ -36,9 +38,18 @@ interface SavedSim {
   updatedAt?: number;
   savedAtYear: number;
   savedAtMonthIdx: number;
+  /** Username that created the sim. Absent on legacy sims (treated as shared). */
+  owner?: string;
+  /** 'private' sims are only visible to their owner. Absent ⇒ shared. */
+  visibility?: SimVisibility;
   predicted: PersistedSimSnapshot;
   overrideKeys: Record<string, number[]>;
   simRows: SavedSimRow[];
+}
+
+/** A sim is visible to a user when it is shared (or legacy) or owned by them. */
+function canView(sim: SavedSim, user: string): boolean {
+  return sim.visibility !== 'private' || sim.owner === user;
 }
 
 interface SaveBody {
@@ -46,6 +57,7 @@ interface SaveBody {
   hypothesis?: unknown;
   description?: unknown;
   tag?: unknown;
+  visibility?: unknown;
   savedAtYear?: unknown;
   savedAtMonthIdx?: unknown;
   predicted?: unknown;
@@ -164,12 +176,12 @@ async function listSims(): Promise<SavedSim[]> {
   return sims.filter((s): s is SavedSim => s != null).sort((a, b) => b.createdAt - a.createdAt);
 }
 
-async function handleGet(): Promise<Response> {
-  const sims = await listSims();
+async function handleGet(user: string): Promise<Response> {
+  const sims = (await listSims()).filter((s) => canView(s, user));
   return Response.json({ sims }, { headers: { 'cache-control': 'no-store' } });
 }
 
-async function handlePost(req: Request): Promise<Response> {
+async function handlePost(req: Request, user: string): Promise<Response> {
   let body: SaveBody;
   try {
     body = (await req.json()) as SaveBody;
@@ -193,6 +205,11 @@ async function handlePost(req: Request): Promise<Response> {
       ? monthIdxN
       : now.getUTCMonth();
 
+  // Only the admin account may create private sims; everyone else is forced to
+  // shared so the primary user's experience is unchanged.
+  const visibility: SimVisibility =
+    body.visibility === 'private' && isAdminUser(user) ? 'private' : 'shared';
+
   const sim: SavedSim = {
     id: newSimId(),
     name,
@@ -202,6 +219,8 @@ async function handlePost(req: Request): Promise<Response> {
     createdAt: Date.now(),
     savedAtYear,
     savedAtMonthIdx,
+    owner: user,
+    visibility,
     predicted: sanitizePredicted(body.predicted),
     overrideKeys: sanitizeOverrideKeys(body.overrideKeys),
     simRows: sanitizeSimRows(body.simRows),
@@ -211,15 +230,18 @@ async function handlePost(req: Request): Promise<Response> {
   return Response.json({ sim }, { status: 201 });
 }
 
-async function handleDelete(req: Request): Promise<Response> {
+async function handleDelete(req: Request, user: string): Promise<Response> {
   const url = new URL(req.url);
   const id = url.searchParams.get('id') ?? '';
   if (!isValidSimId(id)) return new Response('Invalid id', { status: 400 });
+  // Hide private sims owned by others behind a 404 rather than leaking existence.
+  const existing = await fetchSim(id);
+  if (existing && !canView(existing, user)) return new Response('Not found', { status: 404 });
   await deleteBlob(simKey(id));
   return Response.json({ ok: true });
 }
 
-async function handlePatch(req: Request): Promise<Response> {
+async function handlePatch(req: Request, user: string): Promise<Response> {
   const url = new URL(req.url);
   const id = url.searchParams.get('id') ?? '';
   if (!isValidSimId(id)) return new Response('Invalid id', { status: 400 });
@@ -231,6 +253,7 @@ async function handlePatch(req: Request): Promise<Response> {
   }
   const existing = await fetchSim(id);
   if (!existing) return new Response('Not found', { status: 404 });
+  if (!canView(existing, user)) return new Response('Not found', { status: 404 });
 
   const next: SavedSim = { ...existing };
   if (typeof body.name === 'string') {
@@ -279,13 +302,13 @@ async function handle(req: Request): Promise<Response> {
 
   switch (req.method) {
     case 'GET':
-      return handleGet();
+      return handleGet(auth.user);
     case 'POST':
-      return handlePost(req);
+      return handlePost(req, auth.user);
     case 'DELETE':
-      return handleDelete(req);
+      return handleDelete(req, auth.user);
     case 'PATCH':
-      return handlePatch(req);
+      return handlePatch(req, auth.user);
     default:
       return new Response('Method not allowed', { status: 405 });
   }

@@ -407,6 +407,7 @@ export function useDataset(): UseDatasetReturn {
         hypothesis: input.hypothesis ?? '',
         description: input.description ?? '',
         tag: 'neutral',
+        visibility: input.visibility ?? 'shared',
         savedAtYear: CURRENT_YEAR,
         savedAtMonthIdx: CURRENT_MONTH_IDX,
         ...snapshot,

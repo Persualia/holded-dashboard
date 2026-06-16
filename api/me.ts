@@ -1,4 +1,4 @@
-import { checkAuth } from './_lib/auth.js';
+import { checkAuth, isAdminUser } from './_lib/auth.js';
 import { toNodeHandler } from './_lib/node-adapter.js';
 
 async function handle(req: Request): Promise<Response> {
@@ -7,7 +7,7 @@ async function handle(req: Request): Promise<Response> {
   }
   const auth = checkAuth(req);
   if (auth instanceof Response) return auth;
-  return Response.json({ user: auth.user });
+  return Response.json({ user: auth.user, isAdmin: isAdminUser(auth.user) });
 }
 
 /**

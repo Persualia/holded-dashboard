@@ -8,9 +8,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { useAuth } from '@/context/AuthProvider';
 import { useDatasetCtx } from '@/context/DatasetProvider';
 import { AuthRequiredError } from '@/lib/auth';
 import type { SavedSim } from '@/lib/types';
@@ -23,9 +26,11 @@ interface Props {
 
 export function SaveSimulationDialog({ open, onOpenChange, onSaved }: Props) {
   const ds = useDatasetCtx();
+  const { isAdmin } = useAuth();
   const [name, setName] = useState('');
   const [hypothesis, setHypothesis] = useState('');
   const [description, setDescription] = useState('');
+  const [privateOnly, setPrivateOnly] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const activeSim = ds.activeSim;
@@ -36,6 +41,7 @@ export function SaveSimulationDialog({ open, onOpenChange, onSaved }: Props) {
       setName(activeSim ? `${activeSim.name} (copia)` : '');
       setHypothesis(activeSim?.hypothesis ?? '');
       setDescription(activeSim?.description ?? '');
+      setPrivateOnly(activeSim?.visibility === 'private');
       setSaving(false);
     }
   }, [open, activeSim]);
@@ -49,6 +55,7 @@ export function SaveSimulationDialog({ open, onOpenChange, onSaved }: Props) {
         name: trimmed,
         hypothesis: hypothesis.trim(),
         description: description.trim(),
+        visibility: isAdmin && privateOnly ? 'private' : 'shared',
       });
       toast.success(`Simulación "${sim.name}" guardada`);
       onSaved?.(sim);
@@ -133,6 +140,25 @@ export function SaveSimulationDialog({ open, onOpenChange, onSaved }: Props) {
               maxLength={4000}
             />
           </div>
+
+          {isAdmin && (
+            <div className="flex items-center justify-between rounded-md border border-input px-3 py-2.5">
+              <div className="flex items-center gap-2">
+                <Lock className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <Label htmlFor="sim-private" className="cursor-pointer text-sm">
+                    Solo visible para mí
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    {privateOnly
+                      ? 'Este escenario será privado.'
+                      : 'Este escenario será visible para todos.'}
+                  </p>
+                </div>
+              </div>
+              <Switch id="sim-private" checked={privateOnly} onCheckedChange={setPrivateOnly} />
+            </div>
+          )}
         </div>
 
         <DialogFooter>

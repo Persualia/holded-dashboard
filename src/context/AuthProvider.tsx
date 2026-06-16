@@ -4,6 +4,7 @@ import { AuthRequiredError, authFetch, clearStoredToken, getStoredToken, setStor
 interface AuthState {
   loading: boolean;
   user: string | null;
+  isAdmin: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
 }
@@ -19,6 +20,7 @@ export class LoginError extends Error {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(() => getStoredToken() !== null);
 
   // Revalidate any stored token on boot. If the token is missing, expired, or
@@ -34,16 +36,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const res = await authFetch('/api/me');
         if (cancelled) return;
         if (res.ok) {
-          const { user: u } = (await res.json()) as { user: string };
+          const { user: u, isAdmin: admin } = (await res.json()) as {
+            user: string;
+            isAdmin?: boolean;
+          };
           setUser(u);
+          setIsAdmin(!!admin);
         } else {
           clearStoredToken();
           setUser(null);
+          setIsAdmin(false);
         }
       } catch {
         if (!cancelled) {
           clearStoredToken();
           setUser(null);
+          setIsAdmin(false);
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -59,7 +67,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     function onStorage(e: StorageEvent) {
       if (e.key !== 'hd_auth_token') return;
-      if (e.newValue == null) setUser(null);
+      if (e.newValue == null) {
+        setUser(null);
+        setIsAdmin(false);
+      }
     }
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
@@ -75,18 +86,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (res.status === 401) throw new LoginError('Usuario o contraseña incorrectos');
       throw new LoginError(`Error del servidor (${res.status})`);
     }
-    const { token, user: u } = (await res.json()) as { token: string; user: string };
+    const { token, user: u, isAdmin: admin } = (await res.json()) as {
+      token: string;
+      user: string;
+      isAdmin?: boolean;
+    };
     setStoredToken(token);
     setUser(u);
+    setIsAdmin(!!admin);
   }, []);
 
   const logout = useCallback(() => {
     clearStoredToken();
     setUser(null);
+    setIsAdmin(false);
   }, []);
 
   return (
-    <AuthContext.Provider value={{ loading, user, login, logout }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ loading, user, isAdmin, login, logout }}>
+      {children}
+    </AuthContext.Provider>
   );
 }
 

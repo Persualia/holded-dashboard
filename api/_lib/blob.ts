@@ -45,3 +45,8 @@ export function simIdFromPathname(pathname: string): string | null {
   const m = /^data\/simulations\/(sim_[A-Za-z0-9_-]{1,64})\.json$/.exec(pathname);
   return m ? m[1] : null;
 }
+
+/** Single global document holding the admin-only bonus configuration. */
+export function bonusKey(): string {
+  return 'data/bonus.json';
+}

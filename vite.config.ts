@@ -40,7 +40,14 @@ function vercelApiDevPlugin(): Plugin {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  for (const key of ['BLOB_READ_WRITE_TOKEN', 'LOGIN', 'PASSWORD', 'AUTH_SECRET']) {
+  for (const key of [
+    'BLOB_READ_WRITE_TOKEN',
+    'LOGIN',
+    'PASSWORD',
+    'ADMIN_LOGIN',
+    'ADMIN_PASSWORD',
+    'AUTH_SECRET',
+  ]) {
     if (env[key] && !process.env[key]) process.env[key] = env[key];
   }
 

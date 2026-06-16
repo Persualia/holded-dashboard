@@ -10,6 +10,7 @@ import { SimulationBar } from '@/components/sim/SimulationBar';
 import { AuthProvider, useAuth } from '@/context/AuthProvider';
 import { DatasetProvider, useDatasetCtx } from '@/context/DatasetProvider';
 import { LoginPage } from '@/features/auth/LoginPage';
+import { BonusView } from '@/features/bonus/BonusView';
 import { CockpitView } from '@/features/cockpit/CockpitView';
 import { PivotView } from '@/features/pivot/PivotView';
 import { SimulationsView } from '@/features/simulations/SimulationsView';
@@ -27,6 +28,7 @@ function ErrorWatcher() {
 }
 
 function Dashboard() {
+  const { isAdmin } = useAuth();
   return (
     <AppShell>
       <div className="space-y-5">
@@ -38,6 +40,7 @@ function Dashboard() {
             <TabsTrigger value="pivot">Pivote</TabsTrigger>
             <TabsTrigger value="timeline">Timeline</TabsTrigger>
             <TabsTrigger value="simulations">Simulaciones</TabsTrigger>
+            {isAdmin && <TabsTrigger value="bonus">Bonus</TabsTrigger>}
           </TabsList>
           <TabsContent value="cockpit" className="mt-2">
             <CockpitView />
@@ -51,6 +54,11 @@ function Dashboard() {
           <TabsContent value="simulations" className="mt-2">
             <SimulationsView />
           </TabsContent>
+          {isAdmin && (
+            <TabsContent value="bonus" className="mt-2">
+              <BonusView />
+            </TabsContent>
+          )}
         </Tabs>
       </div>
       <ErrorWatcher />

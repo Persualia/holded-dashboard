@@ -1,4 +1,4 @@
-import { CalendarClock, FileText, Pencil, RotateCcw, Trash2 } from 'lucide-react';
+import { CalendarClock, FileText, Lock, Pencil, RotateCcw, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -86,6 +86,12 @@ export function SimulationCard({
                 <CalendarClock className="h-3 w-3" />
                 {DATE_FMT.format(created)} · {TIME_FMT.format(created)}
               </span>
+              {sim.visibility === 'private' ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 font-medium text-foreground/70">
+                  <Lock className="h-3 w-3" />
+                  Privado
+                </span>
+              ) : null}
             </div>
           </div>
           <AccuracyBadge evaluation={evaluation} />
