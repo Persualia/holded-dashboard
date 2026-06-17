@@ -20,6 +20,12 @@ import { formatEUR, formatNumberInput, parseUserNumber } from '@/lib/format';
 import type { BonusWorker } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
+const bonusFieldClass =
+  'border-secondary/50 bg-secondary/20 shadow-sm hover:border-secondary/70 hover:bg-secondary/30 focus-visible:border-primary/70 focus-visible:bg-secondary/20 focus-visible:ring-primary/30';
+
+const lockedTotalFieldClass =
+  'border-[var(--muted-foreground)] bg-[var(--muted-foreground)] text-[var(--primary-foreground)] ring-1 ring-[var(--muted-foreground)] shadow-sm placeholder:text-[var(--primary-foreground)]/70 hover:border-[var(--muted-foreground)] hover:bg-[var(--muted-foreground)] focus-visible:bg-[var(--muted-foreground)] focus-visible:text-[var(--primary-foreground)]';
+
 /** Text input that parses Spanish-formatted numbers and commits live + on blur. */
 function NumField({
   value,
@@ -42,7 +48,7 @@ function NumField({
       aria-label={ariaLabel}
       inputMode="decimal"
       value={text}
-      className={cn('tabular-nums', className)}
+      className={cn(bonusFieldClass, 'tabular-nums', className)}
       onFocus={() => setFocused(true)}
       onChange={(e) => {
         setText(e.target.value);
@@ -362,7 +368,12 @@ export function BonusView() {
                   <TableRow>
                     <TableHead>Trabajador</TableHead>
                     <TableHead className="w-32">Peso (%)</TableHead>
-                    <TableHead className="w-40">
+                    <TableHead
+                      className={cn(
+                        'w-40 transition-colors',
+                        locked && 'border-l border-primary/30 bg-primary/10 text-primary',
+                      )}
+                    >
                       <div className="flex items-center gap-1.5">
                         <span>Total (€)</span>
                         <Tooltip>
@@ -375,7 +386,7 @@ export function BonusView() {
                               className={cn(
                                 'inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors',
                                 locked
-                                  ? 'bg-primary/10 text-primary'
+                                  ? 'bg-[var(--muted-foreground)] text-[var(--primary-foreground)] hover:bg-[var(--muted-foreground)] hover:text-[var(--primary-foreground)]'
                                   : 'text-muted-foreground/60 hover:bg-muted hover:text-foreground',
                               )}
                             >
@@ -406,6 +417,7 @@ export function BonusView() {
                           placeholder="Nombre"
                           onChange={(e) => updateWorker(w.id, { name: e.target.value })}
                           maxLength={120}
+                          className={bonusFieldClass}
                         />
                       </TableCell>
                       <TableCell>
@@ -415,11 +427,16 @@ export function BonusView() {
                           ariaLabel={`Peso de ${w.name || 'trabajador'}`}
                         />
                       </TableCell>
-                      <TableCell>
+                      <TableCell
+                        className={cn(
+                          'transition-colors',
+                          locked && 'border-l border-primary/20 bg-primary/10',
+                        )}
+                      >
                         <NumField
                           value={workerTotal(w)}
                           onCommit={(n) => setWorkerTotal(w, n)}
-                          className={cn(locked && 'border-primary/40 bg-primary/5')}
+                          className={cn(locked && lockedTotalFieldClass)}
                           ariaLabel={`Total de ${w.name || 'trabajador'}`}
                         />
                       </TableCell>
