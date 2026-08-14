@@ -9,7 +9,10 @@ import { SidePanel } from './SidePanel';
 
 export function TimelineView() {
   const ds = useDatasetCtx();
-  const [openMonth, setOpenMonth] = useState<number>(CURRENT_MONTH_IDX);
+  // Abrimos el último mes cerrado: es el más reciente con datos reales, frente
+  // al mes en curso, que todavía es previsión. En enero no hay mes anterior
+  // dentro del año, así que se queda en el propio enero.
+  const [openMonth, setOpenMonth] = useState<number>(Math.max(0, CURRENT_MONTH_IDX - 1));
 
   const aggEff = useMemo(() => (ds.effective ? aggregate(ds.effective.items) : null), [ds.effective]);
   const aggBase = useMemo(() => (ds.base ? aggregate(ds.base.items) : null), [ds.base]);
