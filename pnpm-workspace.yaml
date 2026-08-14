@@ -2,4 +2,6 @@
 # ejecutar su script de postinstall. Lo marcamos como `false` (no ejecutar)
 # para que pnpm no pregunte ni falle con ERR_PNPM_IGNORED_BUILDS.
 allowBuilds:
+  # core-js sólo usa su postinstall para imprimir un banner de donaciones.
+  core-js: false
   esbuild: false
