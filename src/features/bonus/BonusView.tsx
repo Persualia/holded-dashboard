@@ -473,6 +473,9 @@ export function BonusView() {
                       className={cn('tabular-nums', overPool ? 'text-destructive' : 'text-muted-foreground')}
                     >
                       Repartido: {formatEUR(distributed)} / {formatEUR(pool)}
+                      {netAfterTax > 0
+                        ? ` (${((distributed / netAfterTax) * 100).toFixed(1)}% del beneficio)`
+                        : ''}
                     </span>
                   </div>
                   {!locked && Math.abs(weightSum - 100) >= 0.01 && weightSum > 0 ? (
