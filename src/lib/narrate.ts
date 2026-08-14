@@ -16,7 +16,7 @@ export interface MonthVariation {
 
 function shortName(name: string): string {
   const parts = name.split(' - ');
-  const after = parts[1]?.trim();
+  const after = parts.slice(1).join(' - ').trim();
   const before = parts[0]?.trim();
   const candidate = after && after.length >= 3 ? after : before || name;
   return candidate.length > 40 ? candidate.slice(0, 37) + '…' : candidate;
