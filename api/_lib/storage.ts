@@ -10,7 +10,10 @@ import path from 'node:path';
  */
 
 const useLocal = !process.env.BLOB_READ_WRITE_TOKEN;
-const LOCAL_ROOT = process.cwd();
+// The env indirection keeps Vercel's file tracer from statically resolving
+// this path: a bare `process.cwd()` makes it bundle the entire project root
+// into every function (and choke on pnpm's store files in cold builds).
+const LOCAL_ROOT = process.env.LOCAL_STORAGE_ROOT || process.cwd();
 
 export async function putBlob(
   key: string,
