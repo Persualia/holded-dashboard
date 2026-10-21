@@ -16,10 +16,12 @@ interface PersistedDataset {
 interface ApiDataResponse {
   base: PersistedDataset;
   forecast: PersistedDataset;
+  /** Upload keys of the exports that have columns for the requested year. */
   monthsUploaded: string[];
+  /** Every upload key, across all years. */
   allMonthsUploaded: string[];
-  projectedFrom: string | null;
-  templateFrom: string | null;
+  /** Years that at least one export has columns for. */
+  availableYears: number[];
 }
 
 const EMPTY: PersistedDataset = { months: [], items: [] };
@@ -32,10 +34,6 @@ function formatMonthKey(year: number, monthIdx: number): string {
   return `${year}-${pad2(monthIdx + 1)}`;
 }
 
-function yearMonthKeys(year: number): string[] {
-  return Array.from({ length: 12 }, (_, i) => formatMonthKey(year, i));
-}
-
 async function fetchJsonMonth(monthKey: string): Promise<PersistedDataset | null> {
   const res = await streamBlob(jsonKey(monthKey));
   if (!res) return null;
@@ -46,25 +44,19 @@ async function fetchJsonMonth(monthKey: string): Promise<PersistedDataset | null
   }
 }
 
-function coversYear(ds: PersistedDataset, year: number): boolean {
-  return ds.months.some((m) => m.startsWith(`${year}-`));
+/** A loaded export plus lookups by month column and by account. */
+interface Export {
+  key: string;
+  ds: PersistedDataset;
+  col: Map<string, number>;
+  byAccount: Map<string, PersistedItem>;
 }
 
-/**
- * Pick the 12 columns of `sourceYear` out of a stored export, labelled as
- * `year` (the same year unless building a copy template). Months the export
- * does not include come out as 0.
- */
-function projectToYear(ds: PersistedDataset, sourceYear: number, year = sourceYear): PersistedDataset {
-  const cols = yearMonthKeys(sourceYear).map((k) => ds.months.indexOf(k));
-  return {
-    months: yearMonthKeys(year),
-    items: ds.items.map((it) => ({
-      name: it.name,
-      account: it.account,
-      values: cols.map((c) => (c >= 0 ? it.values[c] ?? 0 : 0)),
-    })),
-  };
+function cellValue(exp: Export, account: string, monthKey: string): number | undefined {
+  const c = exp.col.get(monthKey);
+  const it = exp.byAccount.get(account);
+  if (c == null || !it || !Array.isArray(it.values)) return undefined;
+  return it.values[c];
 }
 
 /**
@@ -75,26 +67,20 @@ function projectToYear(ds: PersistedDataset, sourceYear: number, year = sourceYe
  *   asOf  = YYYY-MM     (default: current UTC year+month) — defines which
  *                       months count as "closed" (strictly before asOf).
  *
- * Response shape:
- *   { base, forecast, monthsUploaded, allMonthsUploaded, projectedFrom, templateFrom }
+ * Every upload is a Holded export stored under the month it was uploaded for
+ * (its key orders exports by recency) and may carry columns for any span of
+ * months, possibly across years. The year is composed month by month:
  *
- * Exports are stored under the month they were uploaded for, but may carry
- * columns for several years, so everything below works by YYYY-MM column key
- * rather than by position.
- *
- * - `base` is the year's 12 columns from the most recent export uploaded for
- *   that year. If the year has no uploads of its own, it comes from the most
- *   recent export (any year) that has columns for it — e.g. a 2026 export that
- *   already includes 2027 — and `projectedFrom` names that export's key.
- *   Failing that, it is a template: the previous year's latest export with
- *   its months relabelled to `year`, named by `templateFrom`.
- * - `forecast` mirrors `base` shape; for each closed month i, values[i] are
- *   pulled from the most recent export (other than base's) uploaded on or
- *   before that month that has a column for it. Months without such a source
- *   (and current/future months) fall back to the base values — those rows
- *   are filtered out as "no comparison" downstream.
- * - `monthsUploaded` is the sorted list of YYYY-MM keys present for the year;
- *   `allMonthsUploaded` the same across every year.
+ * - `base`: each month's column comes from the most recent export that has
+ *   it, so a newer export refreshes every month it covers — including past
+ *   years — while months it no longer covers keep their last known values.
+ *   Accounts are the union of the contributing exports; an account missing
+ *   from the export that supplies a month counts as 0 there. A year with no
+ *   columns in any export comes back empty.
+ * - `forecast` mirrors `base`; for each closed month, values come from the
+ *   most recent earlier export (key <= that month, not the one supplying
+ *   base) that has the column. Months without such a source keep the base
+ *   values — those rows are filtered out as "no comparison" downstream.
  */
 async function handle(req: Request): Promise<Response> {
   if (req.method !== 'GET') {
@@ -124,62 +110,59 @@ async function handle(req: Request): Promise<Response> {
     if (mk && isValidMonthKey(mk)) monthsWithJson.add(mk);
   }
   const allMonthsUploaded = Array.from(monthsWithJson).sort();
-  const monthsUploaded = allMonthsUploaded.filter((k) => k.startsWith(`${year}-`));
 
-  // Exports are fetched lazily and at most once per request.
-  const cache = new Map<string, Promise<PersistedDataset | null>>();
-  const load = (k: string): Promise<PersistedDataset | null> => {
-    let p = cache.get(k);
-    if (!p) {
-      p = fetchJsonMonth(k);
-      cache.set(k, p);
-    }
-    return p;
-  };
-
-  const respond = (body: ApiDataResponse) =>
-    Response.json(body, { headers: { 'cache-control': 'no-store' } });
-  const empty = (): ApiDataResponse => ({
-    base: EMPTY,
-    forecast: EMPTY,
-    monthsUploaded,
-    allMonthsUploaded,
-    projectedFrom: null,
-    templateFrom: null,
-  });
-
-  // Resolve which export `base` comes from.
-  let latestKey: string | null = monthsUploaded[monthsUploaded.length - 1] ?? null;
-  let projectedFrom: string | null = null;
-  if (!latestKey) {
-    for (let i = allMonthsUploaded.length - 1; i >= 0; i--) {
-      const ds = await load(allMonthsUploaded[i]);
-      if (ds && coversYear(ds, year)) {
-        latestKey = projectedFrom = allMonthsUploaded[i];
-        break;
-      }
-    }
-  }
-
-  if (!latestKey) {
-    const prevYear = allMonthsUploaded.filter((k) => k.startsWith(`${year - 1}-`));
-    const templateFrom = prevYear[prevYear.length - 1];
-    const prev = templateFrom ? await load(templateFrom) : null;
-    if (!templateFrom || !prev) return respond(empty());
-    const template = projectToYear(prev, year - 1, year);
-    return respond({
-      base: template,
-      forecast: template,
-      monthsUploaded,
-      allMonthsUploaded,
-      projectedFrom: null,
-      templateFrom,
+  // Newest first. Every export is needed to know which months it carries.
+  const loaded = await Promise.all(allMonthsUploaded.map(fetchJsonMonth));
+  const exportsDesc: Export[] = [];
+  for (let i = allMonthsUploaded.length - 1; i >= 0; i--) {
+    const ds = loaded[i];
+    if (!ds || !Array.isArray(ds.months) || !Array.isArray(ds.items)) continue;
+    exportsDesc.push({
+      key: allMonthsUploaded[i],
+      ds,
+      col: new Map(ds.months.map((m, c) => [m, c])),
+      byAccount: new Map(ds.items.map((it) => [it.account, it])),
     });
   }
 
-  const latest = await load(latestKey);
-  if (!latest) return respond(empty());
-  const baseDataset = projectToYear(latest, year);
+  const years = new Set<number>();
+  for (const e of exportsDesc) {
+    for (const m of e.ds.months) if (isValidMonthKey(m)) years.add(parseInt(m.slice(0, 4), 10));
+  }
+  const availableYears = Array.from(years).sort((a, b) => a - b);
+
+  const monthKeys = Array.from({ length: 12 }, (_, i) => formatMonthKey(year, i));
+  const source = monthKeys.map((mk) => exportsDesc.find((e) => e.col.has(mk)) ?? null);
+  const contributing = exportsDesc.filter((e) => source.includes(e));
+  const monthsUploaded = exportsDesc
+    .filter((e) => monthKeys.some((mk) => e.col.has(mk)))
+    .map((e) => e.key)
+    .sort();
+
+  const respond = (base: PersistedDataset, forecast: PersistedDataset) =>
+    Response.json({ base, forecast, monthsUploaded, allMonthsUploaded, availableYears } satisfies ApiDataResponse, {
+      headers: { 'cache-control': 'no-store' },
+    });
+
+  if (contributing.length === 0) return respond(EMPTY, EMPTY);
+
+  // Union of accounts, newest export first so names and order follow it.
+  const names = new Map<string, string>();
+  for (const e of contributing) {
+    for (const it of e.ds.items) if (!names.has(it.account)) names.set(it.account, it.name);
+  }
+
+  const baseDataset: PersistedDataset = {
+    months: monthKeys,
+    items: Array.from(names, ([account, name]) => ({
+      name,
+      account,
+      values: monthKeys.map((mk, i) => {
+        const src = source[i];
+        return src ? cellValue(src, account, mk) ?? 0 : 0;
+      }),
+    })),
+  };
 
   let closedMonthsCount: number;
   if (year < asOfYear) closedMonthsCount = 12;
@@ -187,10 +170,9 @@ async function handle(req: Request): Promise<Response> {
   else closedMonthsCount = 0;
 
   // Build forecast as a deep-cloned base, then overwrite closed-month cells
-  // from the chosen source per month: the largest K <= monthKey(i), K !=
-  // latestKey (that is the "real" snapshot), whose export has a column for
-  // month i. Including K == M (the M-file itself) treats its M column as the
-  // at-time-of-export estimate — useful when no earlier file exists.
+  // from the chosen source per month. Including K == M (the M-file itself)
+  // treats its M column as the at-time-of-export estimate — useful when no
+  // earlier file exists.
   const forecast: PersistedDataset = {
     months: baseDataset.months,
     items: baseDataset.items.map((it) => ({
@@ -199,39 +181,17 @@ async function handle(req: Request): Promise<Response> {
       values: it.values.slice(),
     })),
   };
-
-  const indexed = new Map<string, Map<string, PersistedItem>>();
   for (let i = 0; i < closedMonthsCount; i++) {
-    const mi = formatMonthKey(year, i);
-    for (let j = allMonthsUploaded.length - 1; j >= 0; j--) {
-      const k = allMonthsUploaded[j];
-      if (k > mi || k === latestKey) continue;
-      const src = await load(k);
-      const col = src ? src.months.indexOf(mi) : -1;
-      if (!src || col < 0) continue;
-      let byAccount = indexed.get(k);
-      if (!byAccount) {
-        byAccount = new Map(src.items.map((it) => [it.account, it]));
-        indexed.set(k, byAccount);
-      }
-      for (const it of forecast.items) {
-        const old = byAccount.get(it.account);
-        if (old && Array.isArray(old.values) && old.values.length > col) {
-          it.values[i] = old.values[col];
-        }
-      }
-      break;
+    const mk = monthKeys[i];
+    const src = exportsDesc.find((e) => e.key <= mk && e !== source[i] && e.col.has(mk));
+    if (!src) continue;
+    for (const it of forecast.items) {
+      const old = cellValue(src, it.account, mk);
+      if (old !== undefined) it.values[i] = old;
     }
   }
 
-  return respond({
-    base: baseDataset,
-    forecast,
-    monthsUploaded,
-    allMonthsUploaded,
-    projectedFrom,
-    templateFrom: null,
-  });
+  return respond(baseDataset, forecast);
 }
 
 export default toNodeHandler(handle);

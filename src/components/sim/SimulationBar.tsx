@@ -409,7 +409,7 @@ export function SimulationBar() {
                   {monthOptions.map((o) => (
                     <SelectItem key={o.key} value={o.key}>
                       {o.label}
-                      {ds.monthsUploaded.includes(o.key) ? ' · ya subido' : ''}
+                      {ds.allMonthsUploaded.includes(o.key) ? ' · ya subido' : ''}
                     </SelectItem>
                   ))}
                 </SelectContent>

@@ -27,21 +27,12 @@ export interface UseDatasetReturn {
    * without an earlier source mirror `base` (no comparison). null while loading.
    */
   forecast: Dataset | null;
-  /** Sorted list of YYYY-MM keys currently uploaded for the active year. */
+  /** Upload keys (YYYY-MM) of the exports that feed the active year. */
   monthsUploaded: string[];
-  /** Sorted list of YYYY-MM keys uploaded across all years. */
+  /** Sorted upload keys (YYYY-MM) across all years. */
   allMonthsUploaded: string[];
-  /**
-   * When the active year has no uploads of its own, `base` is this year's
-   * columns inside this other export (YYYY-MM), e.g. a 2026 export that
-   * already carries 2027; else null.
-   */
-  projectedFrom: string | null;
-  /**
-   * When no export has columns for the active year, `base` is a template built from
-   * this earlier snapshot (YYYY-MM) relabelled to the active year; else null.
-   */
-  templateFrom: string | null;
+  /** Years some export has data for — the ones the year switcher offers. */
+  availableYears: number[];
   /** Base merged with sim overrides (when showSim). null while loading. */
   effective: EffectiveDataset | null;
   /** Per-account overrides keyed by month index. */
@@ -104,8 +95,7 @@ interface FetchedData {
   forecast: Dataset;
   monthsUploaded: string[];
   allMonthsUploaded: string[];
-  projectedFrom: string | null;
-  templateFrom: string | null;
+  availableYears: number[];
 }
 
 function pad2(n: number): string {
@@ -199,9 +189,8 @@ async function fetchDataset(): Promise<FetchedData> {
     base: hydrateDataset(raw.base),
     forecast: hydrateDataset(raw.forecast),
     monthsUploaded: raw.monthsUploaded,
-    allMonthsUploaded: raw.allMonthsUploaded ?? raw.monthsUploaded,
-    projectedFrom: raw.projectedFrom ?? null,
-    templateFrom: raw.templateFrom ?? null,
+    allMonthsUploaded: raw.allMonthsUploaded,
+    availableYears: raw.availableYears,
   };
 }
 
@@ -215,8 +204,7 @@ export function useDataset(): UseDatasetReturn {
   const [forecast, setForecast] = useState<Dataset | null>(null);
   const [monthsUploaded, setMonthsUploaded] = useState<string[]>([]);
   const [allMonthsUploaded, setAllMonthsUploaded] = useState<string[]>([]);
-  const [projectedFrom, setProjectedFrom] = useState<string | null>(null);
-  const [templateFrom, setTemplateFrom] = useState<string | null>(null);
+  const [availableYears, setAvailableYears] = useState<number[]>([]);
   const [sim, setSim] = useState<SimOverrides>(() => getJSON<SimOverrides>(keys.sim, {}));
   const [simRows, setSimRows] = useState<SimRow[]>(() => getJSON<SimRow[]>(keys.simRows, []));
   const [showSim, setShowSim] = useState<boolean>(() => getJSON<boolean>(STORAGE_KEYS.showSim, true));
@@ -244,8 +232,7 @@ export function useDataset(): UseDatasetReturn {
         setForecast(d.forecast);
         setMonthsUploaded(d.monthsUploaded);
         setAllMonthsUploaded(d.allMonthsUploaded);
-        setProjectedFrom(d.projectedFrom);
-        setTemplateFrom(d.templateFrom);
+        setAvailableYears(d.availableYears);
       })
       .catch((e: Error) => {
         if (!cancelled) setError('No se pudieron cargar los datos: ' + e.message);
@@ -561,8 +548,7 @@ export function useDataset(): UseDatasetReturn {
     setForecast(d.forecast);
     setMonthsUploaded(d.monthsUploaded);
     setAllMonthsUploaded(d.allMonthsUploaded);
-    setProjectedFrom(d.projectedFrom);
-    setTemplateFrom(d.templateFrom);
+    setAvailableYears(d.availableYears);
   }, []);
 
   return {
@@ -570,8 +556,7 @@ export function useDataset(): UseDatasetReturn {
     forecast,
     monthsUploaded,
     allMonthsUploaded,
-    projectedFrom,
-    templateFrom,
+    availableYears,
     effective,
     sim,
     simCount,
