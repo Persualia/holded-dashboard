@@ -12,7 +12,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatEUR } from '@/lib/format';
 import type { SimEvaluation } from '@/lib/simEvaluation';
-import { CURRENT_MONTH_IDX, MONTH_LABELS_ES } from '@/lib/time';
+import { CURRENT_MONTH_IDX, MONTH_LABELS_ES, TODAY_IDX } from '@/lib/time';
 import type { SavedSim } from '@/lib/types';
 
 interface Item {
@@ -86,12 +86,14 @@ export function DiffPanel({ items }: Props) {
               }}
             />
             <Legend wrapperStyle={{ fontSize: 11 }} />
-            <ReferenceLine
-              x={MONTH_LABELS_ES[CURRENT_MONTH_IDX]}
-              stroke="var(--accent)"
-              strokeDasharray="3 3"
-              label={{ value: 'hoy', position: 'insideTopRight', fill: 'var(--accent)', fontSize: 10 }}
-            />
+            {TODAY_IDX != null && (
+              <ReferenceLine
+                x={MONTH_LABELS_ES[TODAY_IDX]}
+                stroke="var(--accent)"
+                strokeDasharray="3 3"
+                label={{ value: 'hoy', position: 'insideTopRight', fill: 'var(--accent)', fontSize: 10 }}
+              />
+            )}
 
             {items.map((it, idx) => (
               <Line

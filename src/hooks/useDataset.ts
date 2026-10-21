@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { authFetch } from '@/lib/auth';
 import { hydrateDataset } from '@/lib/xlsx';
-import { getJSON, setJSON, STORAGE_KEYS } from '@/lib/storage';
-import { CURRENT_MONTH_IDX, CURRENT_YEAR, isLocked } from '@/lib/time';
+import { getJSON, setJSON, simStorageKeys, STORAGE_KEYS } from '@/lib/storage';
+import { CURRENT_MONTH_IDX, isLocked, TODAY_MONTH_IDX, TODAY_YEAR, VIEW_YEAR } from '@/lib/time';
 import type {
   ApiDataResponse,
   ApplyScope,
@@ -29,6 +29,13 @@ export interface UseDatasetReturn {
   forecast: Dataset | null;
   /** Sorted list of YYYY-MM keys currently uploaded for the active year. */
   monthsUploaded: string[];
+  /** Sorted list of YYYY-MM keys uploaded across all years. */
+  allMonthsUploaded: string[];
+  /**
+   * When the active year has no uploads yet, `base` is a template built from
+   * this earlier snapshot (YYYY-MM) relabelled to the active year; else null.
+   */
+  templateFrom: string | null;
   /** Base merged with sim overrides (when showSim). null while loading. */
   effective: EffectiveDataset | null;
   /** Per-account overrides keyed by month index. */
@@ -62,7 +69,7 @@ export interface UseDatasetReturn {
   loadXlsx: (file: File, monthKey: string) => Promise<void>;
   /** Last error message (e.g. fetch / upload failure). */
   error: string | null;
-  /** Saved scenarios persisted on the server, most-recent-first. */
+  /** Saved scenarios for the active year persisted on the server, most-recent-first. */
   savedSims: SavedSim[];
   savedSimsLoading: boolean;
   /** Id of the saved sim currently loaded into the working state (null = unsaved/new). */
@@ -90,6 +97,8 @@ interface FetchedData {
   base: Dataset;
   forecast: Dataset;
   monthsUploaded: string[];
+  allMonthsUploaded: string[];
+  templateFrom: string | null;
 }
 
 function pad2(n: number): string {
@@ -167,9 +176,15 @@ function mergeSim(base: Dataset, sim: SimOverrides, simRows: SimRow[]): Effectiv
   return { months: base.months, items };
 }
 
+/** Year a saved sim was made for, read from its snapshot's month keys. */
+function simYear(s: SavedSim): number | null {
+  const first = s.predicted?.months?.[0];
+  return first ? Number.parseInt(first.slice(0, 4), 10) : null;
+}
+
 async function fetchDataset(): Promise<FetchedData> {
-  const asOf = `${CURRENT_YEAR}-${pad2(CURRENT_MONTH_IDX + 1)}`;
-  const url = `/api/data?year=${CURRENT_YEAR}&asOf=${asOf}`;
+  const asOf = `${TODAY_YEAR}-${pad2(TODAY_MONTH_IDX + 1)}`;
+  const url = `/api/data?year=${VIEW_YEAR}&asOf=${asOf}`;
   const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const raw = (await res.json()) as ApiDataResponse;
@@ -177,25 +192,34 @@ async function fetchDataset(): Promise<FetchedData> {
     base: hydrateDataset(raw.base),
     forecast: hydrateDataset(raw.forecast),
     monthsUploaded: raw.monthsUploaded,
+    allMonthsUploaded: raw.allMonthsUploaded ?? raw.monthsUploaded,
+    templateFrom: raw.templateFrom ?? null,
   };
 }
 
+/**
+ * Dataset + working simulation for VIEW_YEAR. The provider is remounted when
+ * the year changes, so everything here is read once per year.
+ */
 export function useDataset(): UseDatasetReturn {
+  const [keys] = useState(() => simStorageKeys(VIEW_YEAR));
   const [base, setBase] = useState<Dataset | null>(null);
   const [forecast, setForecast] = useState<Dataset | null>(null);
   const [monthsUploaded, setMonthsUploaded] = useState<string[]>([]);
-  const [sim, setSim] = useState<SimOverrides>(() => getJSON<SimOverrides>(STORAGE_KEYS.sim, {}));
-  const [simRows, setSimRows] = useState<SimRow[]>(() => getJSON<SimRow[]>(STORAGE_KEYS.simRows, []));
+  const [allMonthsUploaded, setAllMonthsUploaded] = useState<string[]>([]);
+  const [templateFrom, setTemplateFrom] = useState<string | null>(null);
+  const [sim, setSim] = useState<SimOverrides>(() => getJSON<SimOverrides>(keys.sim, {}));
+  const [simRows, setSimRows] = useState<SimRow[]>(() => getJSON<SimRow[]>(keys.simRows, []));
   const [showSim, setShowSim] = useState<boolean>(() => getJSON<boolean>(STORAGE_KEYS.showSim, true));
   const [activeSimId, setActiveSimId] = useState<string | null>(() =>
-    getJSON<string | null>(STORAGE_KEYS.activeSimId, null),
+    getJSON<string | null>(keys.activeSimId, null),
   );
   // Working-state fingerprint as of the last load/save. Falls back to the
   // restored working state so a fresh session (no prior baseline) is not dirty.
   const [baselineSig, setBaselineSig] = useState<string>(() => {
-    const stored = getJSON<string | null>(STORAGE_KEYS.simBaseline, null);
+    const stored = getJSON<string | null>(keys.simBaseline, null);
     if (stored != null) return stored;
-    return simSignature(getJSON<SimOverrides>(STORAGE_KEYS.sim, {}), getJSON<SimRow[]>(STORAGE_KEYS.simRows, []));
+    return simSignature(getJSON<SimOverrides>(keys.sim, {}), getJSON<SimRow[]>(keys.simRows, []));
   });
   const [error, setError] = useState<string | null>(null);
   const [savedSims, setSavedSims] = useState<SavedSim[]>([]);
@@ -210,6 +234,8 @@ export function useDataset(): UseDatasetReturn {
         setBase(d.base);
         setForecast(d.forecast);
         setMonthsUploaded(d.monthsUploaded);
+        setAllMonthsUploaded(d.allMonthsUploaded);
+        setTemplateFrom(d.templateFrom);
       })
       .catch((e: Error) => {
         if (!cancelled) setError('No se pudieron cargar los datos: ' + e.message);
@@ -221,20 +247,20 @@ export function useDataset(): UseDatasetReturn {
 
   // Persist sim + show toggle.
   useEffect(() => {
-    setJSON(STORAGE_KEYS.sim, sim);
-  }, [sim]);
+    setJSON(keys.sim, sim);
+  }, [keys, sim]);
   useEffect(() => {
-    setJSON(STORAGE_KEYS.simRows, simRows);
-  }, [simRows]);
+    setJSON(keys.simRows, simRows);
+  }, [keys, simRows]);
   useEffect(() => {
     setJSON(STORAGE_KEYS.showSim, showSim);
   }, [showSim]);
   useEffect(() => {
-    setJSON(STORAGE_KEYS.activeSimId, activeSimId);
-  }, [activeSimId]);
+    setJSON(keys.activeSimId, activeSimId);
+  }, [keys, activeSimId]);
   useEffect(() => {
-    setJSON(STORAGE_KEYS.simBaseline, baselineSig);
-  }, [baselineSig]);
+    setJSON(keys.simBaseline, baselineSig);
+  }, [keys, baselineSig]);
 
   const currentSig = useMemo(() => simSignature(sim, simRows), [sim, simRows]);
   const isDirty = currentSig !== baselineSig;
@@ -356,7 +382,7 @@ export function useDataset(): UseDatasetReturn {
       .then(async (res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = (await res.json()) as { sims: SavedSim[] };
-        if (!cancelled) setSavedSims(data.sims ?? []);
+        if (!cancelled) setSavedSims((data.sims ?? []).filter((s) => simYear(s) === VIEW_YEAR));
       })
       .catch((e: Error) => {
         if (!cancelled) setError('No se pudieron cargar las simulaciones: ' + e.message);
@@ -408,8 +434,8 @@ export function useDataset(): UseDatasetReturn {
         description: input.description ?? '',
         tag: 'neutral',
         visibility: input.visibility ?? 'shared',
-        savedAtYear: CURRENT_YEAR,
-        savedAtMonthIdx: CURRENT_MONTH_IDX,
+        savedAtYear: TODAY_YEAR,
+        savedAtMonthIdx: TODAY_MONTH_IDX,
         ...snapshot,
       };
       const res = await authFetch('/api/simulations', {
@@ -524,12 +550,16 @@ export function useDataset(): UseDatasetReturn {
     setBase(d.base);
     setForecast(d.forecast);
     setMonthsUploaded(d.monthsUploaded);
+    setAllMonthsUploaded(d.allMonthsUploaded);
+    setTemplateFrom(d.templateFrom);
   }, []);
 
   return {
     base,
     forecast,
     monthsUploaded,
+    allMonthsUploaded,
+    templateFrom,
     effective,
     sim,
     simCount,

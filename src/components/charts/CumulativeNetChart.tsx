@@ -9,7 +9,7 @@ import {
   YAxis,
 } from 'recharts';
 import { formatEUR } from '@/lib/format';
-import { CURRENT_MONTH_IDX, MONTH_LABELS_ES } from '@/lib/time';
+import { MONTH_LABELS_ES, TODAY_IDX } from '@/lib/time';
 
 interface Props {
   values: number[];
@@ -52,11 +52,13 @@ export function CumulativeNetChart({ values, height = 200 }: Props) {
             fontSize: 12,
           }}
         />
-        <ReferenceLine
-          x={MONTH_LABELS_ES[CURRENT_MONTH_IDX]}
-          stroke="var(--primary)"
-          strokeDasharray="3 3"
-        />
+        {TODAY_IDX != null && (
+          <ReferenceLine
+            x={MONTH_LABELS_ES[TODAY_IDX]}
+            stroke="var(--primary)"
+            strokeDasharray="3 3"
+          />
+        )}
         <Area
           type="monotone"
           dataKey="value"

@@ -9,7 +9,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { CURRENT_MONTH_IDX, MONTH_LABELS_ES } from '@/lib/time';
+import { CURRENT_MONTH_IDX, MONTH_LABELS_ES, TODAY_IDX } from '@/lib/time';
 import { formatEUR } from '@/lib/format';
 
 export interface ChartSeries {
@@ -105,12 +105,14 @@ export function IncomeExpenseNetChart({
         />
         <Legend wrapperStyle={{ fontSize: 11 }} />
 
-        <ReferenceLine
-          x={MONTH_LABELS_ES[CURRENT_MONTH_IDX]}
-          stroke={COLORS.net}
-          strokeDasharray="3 3"
-          label={{ value: 'hoy', position: 'insideTopRight', fill: COLORS.net, fontSize: 10 }}
-        />
+        {TODAY_IDX != null && (
+          <ReferenceLine
+            x={MONTH_LABELS_ES[TODAY_IDX]}
+            stroke={COLORS.net}
+            strokeDasharray="3 3"
+            label={{ value: 'hoy', position: 'insideTopRight', fill: COLORS.net, fontSize: 10 }}
+          />
+        )}
 
         {/* Forecast (light dashed) */}
         {showIncome && (
