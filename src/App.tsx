@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -9,6 +9,7 @@ import { TopBar } from '@/components/layout/TopBar';
 import { SimulationBar } from '@/components/sim/SimulationBar';
 import { AuthProvider, useAuth } from '@/context/AuthProvider';
 import { DatasetProvider, useDatasetCtx } from '@/context/DatasetProvider';
+import { useViewYear, ViewYearProvider } from '@/context/ViewYearProvider';
 import { LoginPage } from '@/features/auth/LoginPage';
 import { BonusView } from '@/features/bonus/BonusView';
 import { CockpitView } from '@/features/cockpit/CockpitView';
@@ -27,14 +28,14 @@ function ErrorWatcher() {
   return null;
 }
 
-function Dashboard() {
+function Dashboard({ tab, onTabChange }: { tab: string; onTabChange: (tab: string) => void }) {
   const { isAdmin } = useAuth();
   return (
     <AppShell>
       <div className="space-y-5">
         <TopBar />
         <SimulationBar />
-        <Tabs defaultValue="cockpit" className="space-y-4">
+        <Tabs value={tab} onValueChange={onTabChange} className="space-y-4">
           <TabsList>
             <TabsTrigger value="cockpit">Cockpit</TabsTrigger>
             <TabsTrigger value="pivot">Pivote</TabsTrigger>
@@ -101,6 +102,21 @@ function useCanonicalAuthPath(authed: boolean, ready: boolean) {
   }, [authed, ready]);
 }
 
+/**
+ * Everything below is remounted when the year changes, so per-year state
+ * (dataset, working simulation, view-local UI) starts fresh. The active tab
+ * lives above the remount so switching years keeps you where you were.
+ */
+function YearScopedDashboard() {
+  const { year } = useViewYear();
+  const [tab, setTab] = useState('cockpit');
+  return (
+    <DatasetProvider key={year}>
+      <Dashboard tab={tab} onTabChange={setTab} />
+    </DatasetProvider>
+  );
+}
+
 function Root() {
   const { loading, user } = useAuth();
   useCanonicalAuthPath(!!user, !loading);
@@ -108,9 +124,9 @@ function Root() {
   if (loading) return <Splash />;
   if (!user) return <LoginPage />;
   return (
-    <DatasetProvider>
-      <Dashboard />
-    </DatasetProvider>
+    <ViewYearProvider>
+      <YearScopedDashboard />
+    </ViewYearProvider>
   );
 }
 

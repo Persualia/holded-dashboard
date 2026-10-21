@@ -1,4 +1,4 @@
-import { isValidMonthKey, jsonKey, monthKeyFromPathname, yearPrefix } from './_lib/blob.js';
+import { DATA_PREFIX, isValidMonthKey, jsonKey, monthKeyFromPathname } from './_lib/blob.js';
 import { toNodeHandler } from './_lib/node-adapter.js';
 import { listBlobs, streamBlob } from './_lib/storage.js';
 
@@ -15,6 +15,8 @@ interface ApiDataResponse {
   base: PersistedDataset;
   forecast: PersistedDataset;
   monthsUploaded: string[];
+  allMonthsUploaded: string[];
+  templateFrom: string | null;
 }
 
 const EMPTY: PersistedDataset = { months: [], items: [] };
@@ -55,7 +57,12 @@ async function fetchJsonMonth(monthKey: string): Promise<PersistedDataset | null
  *   source (and for current/future months), forecast values fall back to
  *   the corresponding base values — those rows are filtered out as
  *   "no comparison" downstream.
- * - `monthsUploaded` is the sorted list of YYYY-MM keys present for the year.
+ * - `monthsUploaded` is the sorted list of YYYY-MM keys present for the year;
+ *   `allMonthsUploaded` the same across every year.
+ * - If the year has no uploads but the previous year does, `base` (and
+ *   `forecast`) are a template: the previous year's latest snapshot with its
+ *   months relabelled to `year`, so next year's scenarios have a starting point.
+ *   `templateFrom` names that snapshot's YYYY-MM key; null otherwise.
  */
 async function handle(req: Request): Promise<Response> {
   if (req.method !== 'GET') {
@@ -77,19 +84,43 @@ async function handle(req: Request): Promise<Response> {
     asOfMonthIdx = parseInt(asOfParam.slice(5, 7), 10) - 1;
   }
 
-  const blobs = await listBlobs(yearPrefix(year));
+  const blobs = await listBlobs(DATA_PREFIX);
   const monthsWithJson = new Set<string>();
   for (const b of blobs) {
     if (!b.pathname.endsWith('.json')) continue;
     const mk = monthKeyFromPathname(b.pathname);
     if (mk && isValidMonthKey(mk)) monthsWithJson.add(mk);
   }
-  const monthsUploaded = Array.from(monthsWithJson).sort();
+  const allMonthsUploaded = Array.from(monthsWithJson).sort();
+  const monthsUploaded = allMonthsUploaded.filter((k) => k.startsWith(`${year}-`));
 
-  const empty = (): ApiDataResponse => ({ base: EMPTY, forecast: EMPTY, monthsUploaded });
+  const empty = (): ApiDataResponse => ({
+    base: EMPTY,
+    forecast: EMPTY,
+    monthsUploaded,
+    allMonthsUploaded,
+    templateFrom: null,
+  });
 
   if (monthsUploaded.length === 0) {
-    return Response.json(empty(), { headers: { 'cache-control': 'no-store' } });
+    const prevYear = allMonthsUploaded.filter((k) => k.startsWith(`${year - 1}-`));
+    const templateFrom = prevYear[prevYear.length - 1];
+    const prev = templateFrom ? await fetchJsonMonth(templateFrom) : null;
+    if (!templateFrom || !prev) {
+      return Response.json(empty(), { headers: { 'cache-control': 'no-store' } });
+    }
+    const template: PersistedDataset = {
+      months: Array.from({ length: 12 }, (_, i) => formatMonthKey(year, i)),
+      items: prev.items,
+    };
+    const body: ApiDataResponse = {
+      base: template,
+      forecast: template,
+      monthsUploaded,
+      allMonthsUploaded,
+      templateFrom,
+    };
+    return Response.json(body, { headers: { 'cache-control': 'no-store' } });
   }
 
   const latestKey = monthsUploaded[monthsUploaded.length - 1];
@@ -160,7 +191,13 @@ async function handle(req: Request): Promise<Response> {
     }
   }
 
-  const body: ApiDataResponse = { base: baseDataset, forecast, monthsUploaded };
+  const body: ApiDataResponse = {
+    base: baseDataset,
+    forecast,
+    monthsUploaded,
+    allMonthsUploaded,
+    templateFrom: null,
+  };
   return Response.json(body, { headers: { 'cache-control': 'no-store' } });
 }
 

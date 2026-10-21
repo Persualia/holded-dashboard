@@ -61,7 +61,7 @@ export function PredictedVsRealSpark({
         strokeDasharray="2 3"
         strokeWidth="0.5"
       />
-      {CURRENT_MONTH_IDX > 0 && (
+      {CURRENT_MONTH_IDX > 0 && CURRENT_MONTH_IDX < 12 && (
         <line
           x1={todayX}
           y1={pad}

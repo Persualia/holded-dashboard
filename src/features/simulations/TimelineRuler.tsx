@@ -1,23 +1,30 @@
-import { CURRENT_MONTH_IDX, CURRENT_YEAR, MONTH_LABELS_ES, TODAY } from '@/lib/time';
+import { MONTH_LABELS_ES, TODAY, TODAY_MONTH_IDX, TODAY_YEAR, VIEW_YEAR } from '@/lib/time';
 import type { SavedSim } from '@/lib/types';
 
 interface Props {
   sims: SavedSim[];
 }
 
+// The ruler places sims by save date. Plans for a future year are made during
+// the current one, so the ruler never goes past today's year.
+function rulerYear(): number {
+  return Math.min(VIEW_YEAR, TODAY_YEAR);
+}
+
 function leftPctFor(date: Date): number {
-  // Map Jan 1 → 0%, Dec 31 → 100% within the current year. Sims saved in
+  // Map Jan 1 → 0%, Dec 31 → 100% within the ruler year. Sims saved in
   // other years are clamped at the edges (rare in practice).
-  const start = new Date(CURRENT_YEAR, 0, 1).getTime();
-  const end = new Date(CURRENT_YEAR + 1, 0, 1).getTime();
+  const year = rulerYear();
+  const start = new Date(year, 0, 1).getTime();
+  const end = new Date(year + 1, 0, 1).getTime();
   const t = Math.max(start, Math.min(end - 1, date.getTime()));
   return ((t - start) / (end - start)) * 100;
 }
 
-const TODAY_PCT = leftPctFor(TODAY);
-
 /** Horizontal year ruler with a dot per saved sim and a "hoy" marker. */
 export function TimelineRuler({ sims }: Props) {
+  const showToday = rulerYear() === TODAY_YEAR;
+  const todayPct = leftPctFor(TODAY);
   return (
     <div className="relative h-14 select-none">
       <div className="absolute inset-x-0 top-7 h-px bg-border" />
@@ -34,17 +41,21 @@ export function TimelineRuler({ sims }: Props) {
           </div>
         );
       })}
-      <div
-        className="pointer-events-none absolute top-1 h-12 w-px bg-accent"
-        style={{ left: `${TODAY_PCT}%` }}
-        title={`hoy · ${MONTH_LABELS_ES[CURRENT_MONTH_IDX]}`}
-      />
-      <div
-        className="absolute -translate-x-1/2 text-[10px] font-medium text-accent"
-        style={{ left: `${TODAY_PCT}%`, top: 0 }}
-      >
-        hoy
-      </div>
+      {showToday && (
+        <>
+          <div
+            className="pointer-events-none absolute top-1 h-12 w-px bg-accent"
+            style={{ left: `${todayPct}%` }}
+            title={`hoy · ${MONTH_LABELS_ES[TODAY_MONTH_IDX]}`}
+          />
+          <div
+            className="absolute -translate-x-1/2 text-[10px] font-medium text-accent"
+            style={{ left: `${todayPct}%`, top: 0 }}
+          >
+            hoy
+          </div>
+        </>
+      )}
       {sims.map((s, i) => {
         const date = new Date(s.createdAt);
         const left = leftPctFor(date);

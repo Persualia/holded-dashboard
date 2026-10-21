@@ -28,7 +28,13 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { useDatasetCtx } from '@/context/DatasetProvider';
 import { AuthRequiredError } from '@/lib/auth';
-import { CURRENT_MONTH_IDX, CURRENT_YEAR, MONTH_LABELS_ES, MONTH_LABELS_LONG_ES } from '@/lib/time';
+import {
+  CURRENT_MONTH_IDX,
+  MONTH_LABELS_ES,
+  MONTH_LABELS_LONG_ES,
+  TODAY_MONTH_IDX,
+  TODAY_YEAR,
+} from '@/lib/time';
 import type { ApplyScope } from '@/lib/types';
 import { extractMonthFromBuffer } from '@/lib/xlsx';
 import { cn } from '@/lib/utils';
@@ -39,7 +45,7 @@ function pad2(n: number): string {
 }
 
 function defaultMonthKey(): string {
-  return `${CURRENT_YEAR}-${pad2(CURRENT_MONTH_IDX + 1)}`;
+  return `${TODAY_YEAR}-${pad2(TODAY_MONTH_IDX + 1)}`;
 }
 
 export function SimulationBar() {
@@ -47,7 +53,7 @@ export function SimulationBar() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [pctOpen, setPctOpen] = useState(false);
   const [pct, setPct] = useState(10);
-  const [fromMonth, setFromMonth] = useState<number>(CURRENT_MONTH_IDX);
+  const [fromMonth, setFromMonth] = useState<number>(Math.min(CURRENT_MONTH_IDX, 11));
   const [scope, setScope] = useState<ApplyScope>('income');
   const [confirmReset, setConfirmReset] = useState(false);
 
@@ -58,14 +64,16 @@ export function SimulationBar() {
   const [confirmOverwrite, setConfirmOverwrite] = useState(false);
   const [overwriting, setOverwriting] = useState(false);
 
-  // Month options for the upload dropdown — current year, all 12 months.
+  // Month options for the upload dropdown — the 12 months of the year the
+  // file was detected as (so a suggestion from another year stays selectable).
+  const pendingYear = Number.parseInt(pendingMonth.slice(0, 4), 10);
   const monthOptions = useMemo(
     () =>
       Array.from({ length: 12 }, (_, i) => ({
-        key: `${CURRENT_YEAR}-${pad2(i + 1)}`,
-        label: `${MONTH_LABELS_LONG_ES[i]} ${CURRENT_YEAR}`,
+        key: `${pendingYear}-${pad2(i + 1)}`,
+        label: `${MONTH_LABELS_LONG_ES[i]} ${pendingYear}`,
       })),
-    [],
+    [pendingYear],
   );
 
   function applyPct() {
@@ -139,7 +147,7 @@ export function SimulationBar() {
     }
   }
 
-  const willOverwrite = ds.monthsUploaded.includes(pendingMonth);
+  const willOverwrite = ds.allMonthsUploaded.includes(pendingMonth);
   const activeSim = ds.activeSim;
   const lastSavedTs = activeSim ? activeSim.updatedAt ?? activeSim.createdAt : null;
   const lastSavedLabel =
@@ -170,7 +178,12 @@ export function SimulationBar() {
       <div className="flex flex-1 flex-wrap items-center justify-end gap-2">
         <Popover open={pctOpen} onOpenChange={setPctOpen}>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={CURRENT_MONTH_IDX >= 12}
+              title={CURRENT_MONTH_IDX >= 12 ? 'Año cerrado: no hay meses futuros' : undefined}
+            >
               <Percent className="mr-1 h-3.5 w-3.5" />
               % desde mes
             </Button>

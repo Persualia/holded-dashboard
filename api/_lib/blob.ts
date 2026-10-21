@@ -18,9 +18,9 @@ export function jsonKey(monthKey: string): string {
   return `data/${monthKey}.json`;
 }
 
-export function yearPrefix(year: number): string {
-  return `data/${year}-`;
-}
+/** Listing prefix covering every month archive (`data/YYYY-MM.*`) but not
+ *  `data/simulations/` or `data/bonus.json`. */
+export const DATA_PREFIX = 'data/20';
 
 /** Parse a `data/YYYY-MM.json` (or .xlsx) pathname back into its YYYY-MM key. */
 export function monthKeyFromPathname(pathname: string): string | null {

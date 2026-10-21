@@ -58,6 +58,11 @@ export interface ApiDataResponse {
   base: PersistedDataset;
   forecast: PersistedDataset;
   monthsUploaded: string[];
+  /** Sorted YYYY-MM keys present across all years. */
+  allMonthsUploaded?: string[];
+  /** Set when the year has no uploads and `base` is a template built from
+   *  this earlier snapshot (YYYY-MM), relabelled to the requested year. */
+  templateFrom?: string | null;
 }
 
 export interface EffectiveDataset {

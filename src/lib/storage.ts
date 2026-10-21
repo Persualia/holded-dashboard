@@ -35,3 +35,35 @@ export const STORAGE_KEYS = {
   simBaseline: 'hd_sim_baseline',
   authToken: 'hd_auth_token',
 } as const;
+
+/** Working-simulation keys that only make sense for one year's dataset. */
+const PER_YEAR_SIM_KEYS = ['sim', 'simRows', 'activeSimId', 'simBaseline'] as const;
+type PerYearSimKey = (typeof PER_YEAR_SIM_KEYS)[number];
+
+/** Year the un-suffixed (pre multi-year) sim keys were written for. */
+const LEGACY_SIM_YEAR = 2026;
+
+/**
+ * Storage keys for the working simulation of `year`, e.g. `hd_sim:2027`.
+ * The first call moves the legacy un-suffixed keys over to LEGACY_SIM_YEAR.
+ */
+export function simStorageKeys(year: number): Record<PerYearSimKey, string> {
+  for (const k of PER_YEAR_SIM_KEYS) {
+    const legacy = STORAGE_KEYS[k];
+    try {
+      const raw = localStorage.getItem(legacy);
+      if (raw == null) continue;
+      const target = `${legacy}:${LEGACY_SIM_YEAR}`;
+      if (localStorage.getItem(target) == null) localStorage.setItem(target, raw);
+      localStorage.removeItem(legacy);
+    } catch {
+      // ignore
+    }
+  }
+  return {
+    sim: `${STORAGE_KEYS.sim}:${year}`,
+    simRows: `${STORAGE_KEYS.simRows}:${year}`,
+    activeSimId: `${STORAGE_KEYS.activeSimId}:${year}`,
+    simBaseline: `${STORAGE_KEYS.simBaseline}:${year}`,
+  };
+}
