@@ -56,7 +56,7 @@ function YearSwitcher() {
 }
 
 export function TopBar() {
-  const { base, templateFrom } = useDatasetCtx();
+  const { base, projectedFrom, templateFrom } = useDatasetCtx();
   const { user, logout } = useAuth();
   const dateLabel = `${TODAY.getDate()} ${MONTH_LABELS_LONG_ES[TODAY_MONTH_IDX].toLowerCase()} ${TODAY.getFullYear()}`;
 
@@ -72,6 +72,11 @@ export function TopBar() {
               : base.items.length === 0
                 ? 'sin datos para este año'
                 : `${base.months[0]} → ${base.months[base.months.length - 1]}`}
+            {projectedFrom && (
+              <span className="ml-2 text-primary">
+                (previsión del export de {monthKeyLabel(projectedFrom)})
+              </span>
+            )}
             {templateFrom && (
               <span className="ml-2 text-primary">
                 (plantilla a partir de {monthKeyLabel(templateFrom)} — todo previsión)

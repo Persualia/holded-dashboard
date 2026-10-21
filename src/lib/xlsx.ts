@@ -2,6 +2,8 @@ import * as XLSX from 'xlsx';
 import { categorize } from './categorize.js';
 import type { Dataset, Item } from './types.js';
 
+const MONTH_HEADER_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
 /**
  * Parse a Holded "Goals" xlsx export from a raw buffer (works in both browser
  * and Node — server uses this directly when handling uploads).
@@ -12,6 +14,9 @@ import type { Dataset, Item } from './types.js';
  *   row 3: ['Concepte', 'Compte', '2026-01', '2026-02', …, '2026-12']
  *   rows 4..N-1: data rows: [name, account, jan..dec]
  *   row N: total row ("Resultat de l'exercici") — skipped
+ *
+ * The export may span more than one year (e.g. 2026-01 … 2027-12): every
+ * consecutive YYYY-MM header column is kept, and `values` follow `months`.
  */
 export function parseHoldedBuffer(buf: ArrayBuffer | Uint8Array): Dataset {
   const wb = XLSX.read(buf, { type: 'array' });
@@ -32,11 +37,14 @@ export function parseHoldedBuffer(buf: ArrayBuffer | Uint8Array): Dataset {
     throw new Error('Cabecera no encontrada en la fila 3 (esperado: Concepte, Compte, 12 meses).');
   }
 
-  const months = headerRow
-    .slice(2, 14)
-    .map((h) => (h == null ? '' : String(h).trim()));
-  if (months.length !== 12 || months.some((m) => !m)) {
-    throw new Error('No se encontraron 12 columnas de mes en la cabecera.');
+  const months: string[] = [];
+  for (const h of headerRow.slice(2)) {
+    const m = h == null ? '' : String(h).trim();
+    if (!MONTH_HEADER_RE.test(m)) break;
+    months.push(m);
+  }
+  if (months.length < 12) {
+    throw new Error('No se encontraron al menos 12 columnas de mes (YYYY-MM) en la cabecera.');
   }
 
   const items: Item[] = [];
@@ -47,7 +55,7 @@ export function parseHoldedBuffer(buf: ArrayBuffer | Uint8Array): Dataset {
     const account = (r[1] == null ? '' : String(r[1])).trim();
     if (!account) continue;
     const values: number[] = [];
-    for (let m = 0; m < 12; m++) {
+    for (let m = 0; m < months.length; m++) {
       const cell = r[m + 2];
       const num = typeof cell === 'number' ? cell : Number.parseFloat(String(cell ?? 0));
       values.push(Number.isFinite(num) ? Math.round(num * 100) / 100 : 0);

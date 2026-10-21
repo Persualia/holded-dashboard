@@ -41,7 +41,8 @@ export interface Dataset {
 }
 
 /** Wire shape of an `Item` as stored in the per-month JSON cache and
- *  exchanged with `/api/data` (no derived fields). */
+ *  exchanged with `/api/data` (no derived fields). Stored exports may hold
+ *  more than 12 months; `/api/data` always answers with the 12 of one year. */
 export interface PersistedItem {
   name: string;
   account: string;
@@ -60,6 +61,9 @@ export interface ApiDataResponse {
   monthsUploaded: string[];
   /** Sorted YYYY-MM keys present across all years. */
   allMonthsUploaded?: string[];
+  /** Set when the year has no uploads of its own and `base` comes from the
+   *  columns for this year inside a later/earlier export (YYYY-MM key). */
+  projectedFrom?: string | null;
   /** Set when the year has no uploads and `base` is a template built from
    *  this earlier snapshot (YYYY-MM), relabelled to the requested year. */
   templateFrom?: string | null;

@@ -32,7 +32,13 @@ export interface UseDatasetReturn {
   /** Sorted list of YYYY-MM keys uploaded across all years. */
   allMonthsUploaded: string[];
   /**
-   * When the active year has no uploads yet, `base` is a template built from
+   * When the active year has no uploads of its own, `base` is this year's
+   * columns inside this other export (YYYY-MM), e.g. a 2026 export that
+   * already carries 2027; else null.
+   */
+  projectedFrom: string | null;
+  /**
+   * When no export has columns for the active year, `base` is a template built from
    * this earlier snapshot (YYYY-MM) relabelled to the active year; else null.
    */
   templateFrom: string | null;
@@ -98,6 +104,7 @@ interface FetchedData {
   forecast: Dataset;
   monthsUploaded: string[];
   allMonthsUploaded: string[];
+  projectedFrom: string | null;
   templateFrom: string | null;
 }
 
@@ -193,6 +200,7 @@ async function fetchDataset(): Promise<FetchedData> {
     forecast: hydrateDataset(raw.forecast),
     monthsUploaded: raw.monthsUploaded,
     allMonthsUploaded: raw.allMonthsUploaded ?? raw.monthsUploaded,
+    projectedFrom: raw.projectedFrom ?? null,
     templateFrom: raw.templateFrom ?? null,
   };
 }
@@ -207,6 +215,7 @@ export function useDataset(): UseDatasetReturn {
   const [forecast, setForecast] = useState<Dataset | null>(null);
   const [monthsUploaded, setMonthsUploaded] = useState<string[]>([]);
   const [allMonthsUploaded, setAllMonthsUploaded] = useState<string[]>([]);
+  const [projectedFrom, setProjectedFrom] = useState<string | null>(null);
   const [templateFrom, setTemplateFrom] = useState<string | null>(null);
   const [sim, setSim] = useState<SimOverrides>(() => getJSON<SimOverrides>(keys.sim, {}));
   const [simRows, setSimRows] = useState<SimRow[]>(() => getJSON<SimRow[]>(keys.simRows, []));
@@ -235,6 +244,7 @@ export function useDataset(): UseDatasetReturn {
         setForecast(d.forecast);
         setMonthsUploaded(d.monthsUploaded);
         setAllMonthsUploaded(d.allMonthsUploaded);
+        setProjectedFrom(d.projectedFrom);
         setTemplateFrom(d.templateFrom);
       })
       .catch((e: Error) => {
@@ -551,6 +561,7 @@ export function useDataset(): UseDatasetReturn {
     setForecast(d.forecast);
     setMonthsUploaded(d.monthsUploaded);
     setAllMonthsUploaded(d.allMonthsUploaded);
+    setProjectedFrom(d.projectedFrom);
     setTemplateFrom(d.templateFrom);
   }, []);
 
@@ -559,6 +570,7 @@ export function useDataset(): UseDatasetReturn {
     forecast,
     monthsUploaded,
     allMonthsUploaded,
+    projectedFrom,
     templateFrom,
     effective,
     sim,
