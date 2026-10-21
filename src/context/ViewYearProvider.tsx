@@ -1,22 +1,19 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { setViewYear, TODAY_YEAR } from '@/lib/time';
 
-/** Furthest year the dashboard lets you plan for. */
-export const MAX_VIEW_YEAR = TODAY_YEAR + 1;
-
 interface ViewYearValue {
   year: number;
-  setYear: (year: number) => void;
+  /** `replace` swaps the history entry instead of adding one (for redirects). */
+  setYear: (year: number, opts?: { replace?: boolean }) => void;
 }
 
 const ViewYearContext = createContext<ViewYearValue | null>(null);
 
-/** Reads `?y=YYYY`; anything missing or out of range falls back to today's year. */
+/** Reads `?y=YYYY`, defaulting to today's year. Whether the year has data is
+ *  only known once the dataset loads; the TopBar snaps to one that does. */
 function readYearFromUrl(): number {
   const raw = new URLSearchParams(window.location.search).get('y');
-  if (!raw || !/^\d{4}$/.test(raw)) return TODAY_YEAR;
-  const y = Number.parseInt(raw, 10);
-  return y <= MAX_VIEW_YEAR ? y : TODAY_YEAR;
+  return raw && /^\d{4}$/.test(raw) ? Number.parseInt(raw, 10) : TODAY_YEAR;
 }
 
 /**
@@ -33,11 +30,12 @@ export function ViewYearProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  const setYear = useCallback((y: number) => {
+  const setYear = useCallback((y: number, opts?: { replace?: boolean }) => {
     const url = new URL(window.location.href);
     if (y === TODAY_YEAR) url.searchParams.delete('y');
     else url.searchParams.set('y', String(y));
-    window.history.pushState(null, '', url);
+    if (opts?.replace) window.history.replaceState(null, '', url);
+    else window.history.pushState(null, '', url);
     setYearState(y);
   }, []);
 

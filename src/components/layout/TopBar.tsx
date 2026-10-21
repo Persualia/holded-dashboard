@@ -1,33 +1,44 @@
+import { useEffect } from 'react';
 import { ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/context/AuthProvider';
 import { useDatasetCtx } from '@/context/DatasetProvider';
-import { MAX_VIEW_YEAR, useViewYear } from '@/context/ViewYearProvider';
-import { MONTH_LABELS_ES, MONTH_LABELS_LONG_ES, TODAY, TODAY_MONTH_IDX, TODAY_YEAR } from '@/lib/time';
+import { useViewYear } from '@/context/ViewYearProvider';
+import { MONTH_LABELS_LONG_ES, TODAY, TODAY_MONTH_IDX, TODAY_YEAR } from '@/lib/time';
 
-/** "2026-09" → "sep 2026" */
-function monthKeyLabel(key: string): string {
-  const idx = Number.parseInt(key.slice(5, 7), 10) - 1;
-  return `${(MONTH_LABELS_ES[idx] ?? '').toLowerCase()} ${key.slice(0, 4)}`;
+/**
+ * Year to show when the requested one has no data: today's year if it has
+ * some, else the latest earlier year (e.g. January before the first export
+ * with the new year), else the first year there is.
+ */
+function fallbackYear(available: number[]): number {
+  if (available.includes(TODAY_YEAR)) return TODAY_YEAR;
+  const earlier = available.filter((y) => y < TODAY_YEAR);
+  return earlier.length > 0 ? earlier[earlier.length - 1] : available[0];
 }
 
+/** ‹ year › switcher over the years some export has data for. */
 function YearSwitcher() {
-  const { allMonthsUploaded } = useDatasetCtx();
+  const { base, availableYears } = useDatasetCtx();
   const { year, setYear } = useViewYear();
-  const firstUploaded = allMonthsUploaded[0];
-  const minYear = Math.min(
-    firstUploaded ? Number.parseInt(firstUploaded.slice(0, 4), 10) : TODAY_YEAR,
-    TODAY_YEAR,
-    year,
-  );
+
+  useEffect(() => {
+    if (!base || availableYears.length === 0 || availableYears.includes(year)) return;
+    setYear(fallbackYear(availableYears), { replace: true });
+  }, [base, availableYears, year, setYear]);
+
+  const idx = availableYears.indexOf(year);
+  const prev = idx > 0 ? availableYears[idx - 1] : null;
+  const next = idx >= 0 && idx < availableYears.length - 1 ? availableYears[idx + 1] : null;
+  const home = availableYears.length > 0 ? fallbackYear(availableYears) : TODAY_YEAR;
   return (
     <div className="flex items-center rounded-md border">
       <Button
         variant="ghost"
         size="sm"
         className="h-8 px-2"
-        onClick={() => setYear(year - 1)}
-        disabled={year <= minYear}
+        onClick={() => prev != null && setYear(prev)}
+        disabled={prev == null}
         aria-label="Año anterior"
       >
         <ChevronLeft className="h-4 w-4" />
@@ -35,9 +46,9 @@ function YearSwitcher() {
       <button
         type="button"
         className="px-1 font-mono text-sm font-semibold tabular-nums disabled:cursor-default"
-        onClick={() => setYear(TODAY_YEAR)}
-        disabled={year === TODAY_YEAR}
-        title={year === TODAY_YEAR ? undefined : `Volver a ${TODAY_YEAR}`}
+        onClick={() => setYear(home)}
+        disabled={year === home}
+        title={year === home ? undefined : `Volver a ${home}`}
       >
         {year}
       </button>
@@ -45,8 +56,8 @@ function YearSwitcher() {
         variant="ghost"
         size="sm"
         className="h-8 px-2"
-        onClick={() => setYear(year + 1)}
-        disabled={year >= MAX_VIEW_YEAR}
+        onClick={() => next != null && setYear(next)}
+        disabled={next == null}
         aria-label="Año siguiente"
       >
         <ChevronRight className="h-4 w-4" />
@@ -56,7 +67,7 @@ function YearSwitcher() {
 }
 
 export function TopBar() {
-  const { base, projectedFrom, templateFrom } = useDatasetCtx();
+  const { base } = useDatasetCtx();
   const { user, logout } = useAuth();
   const dateLabel = `${TODAY.getDate()} ${MONTH_LABELS_LONG_ES[TODAY_MONTH_IDX].toLowerCase()} ${TODAY.getFullYear()}`;
 
@@ -72,16 +83,6 @@ export function TopBar() {
               : base.items.length === 0
                 ? 'sin datos para este año'
                 : `${base.months[0]} → ${base.months[base.months.length - 1]}`}
-            {projectedFrom && (
-              <span className="ml-2 text-primary">
-                (previsión del export de {monthKeyLabel(projectedFrom)})
-              </span>
-            )}
-            {templateFrom && (
-              <span className="ml-2 text-primary">
-                (plantilla a partir de {monthKeyLabel(templateFrom)} — todo previsión)
-              </span>
-            )}
             <span className="mx-2 text-border">·</span>
             hoy: {dateLabel}
           </p>
