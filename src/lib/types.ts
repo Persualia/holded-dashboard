@@ -174,14 +174,16 @@ export interface BonusWorker {
 export interface BonusConfig {
   /** Impuesto de Sociedades rate, default 23. */
   taxRatePct: number;
-  /** Below this after-tax net profit, nothing is distributed. */
+  /** Net profit the company must keep after bonus and tax; the pool shrinks to
+   *  guarantee it. */
   minNetProfit: number;
-  /** Share of the (after-tax) profit forming the bonus pool. */
+  /** Share of the pre-tax profit forming the bonus pool. */
   distributePct: number;
   /** Hard cap on the bonus pool. */
   maxDistribute: number;
-  /** When true, each worker's euro total is pinned (BonusWorker.lockedTotal) and
-   *  stays fixed as the pool changes; the weight (%) becomes the derived value. */
+  /** Which column the padlock pins: true = euro totals (BonusWorker.lockedTotal)
+   *  stay fixed as the pool changes and the weight (%) is derived; false = the
+   *  weights are pinned and the totals are derived. */
   lockTotals?: boolean;
   workers: BonusWorker[];
   updatedAt?: number;

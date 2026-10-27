@@ -23,8 +23,8 @@ interface BonusConfig {
 
 const DEFAULT_CONFIG: BonusConfig = {
   taxRatePct: 23,
-  minNetProfit: 0,
-  distributePct: 0,
+  minNetProfit: 10000,
+  distributePct: 40,
   maxDistribute: 0,
   lockTotals: false,
   workers: [],
@@ -60,8 +60,8 @@ function sanitizeConfig(raw: unknown): BonusConfig {
   const obj = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   return {
     taxRatePct: num(obj.taxRatePct, DEFAULT_CONFIG.taxRatePct),
-    minNetProfit: num(obj.minNetProfit, 0),
-    distributePct: num(obj.distributePct, 0),
+    minNetProfit: num(obj.minNetProfit, DEFAULT_CONFIG.minNetProfit),
+    distributePct: num(obj.distributePct, DEFAULT_CONFIG.distributePct),
     maxDistribute: num(obj.maxDistribute, 0),
     lockTotals: obj.lockTotals === true,
     workers: sanitizeWorkers(obj.workers),
