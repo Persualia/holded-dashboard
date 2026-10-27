@@ -31,3 +31,5 @@ lerna-debug.log*
 
 # Local dataset used only for `pnpm seed`; production reads from Vercel Blob
 data/
+
+*.tsbuildinfo
