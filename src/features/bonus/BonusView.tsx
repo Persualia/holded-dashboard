@@ -17,13 +17,17 @@ import { useDatasetCtx } from '@/context/DatasetProvider';
 import { useBonus } from '@/hooks/useBonus';
 import { aggregate } from '@/lib/aggregate';
 import { formatEUR, formatNumberInput, parseUserNumber } from '@/lib/format';
+import { computeBonusPool, type PoolLimit } from '@/lib/bonus';
 import type { BonusWorker } from '@/lib/types';
 import { cn } from '@/lib/utils';
 
 const bonusFieldClass =
   'border-secondary/50 bg-secondary/20 shadow-sm hover:border-secondary/70 hover:bg-secondary/30 focus-visible:border-primary/70 focus-visible:bg-secondary/20 focus-visible:ring-primary/30';
 
-const lockedTotalFieldClass =
+const lockedHeadClass = 'border-x border-primary/30 bg-primary/10 text-primary';
+const lockedCellClass = 'border-x border-primary/20 bg-primary/10';
+
+const lockedFieldClass =
   'border-[var(--muted-foreground)] bg-[var(--muted-foreground)] text-[var(--primary-foreground)] ring-1 ring-[var(--muted-foreground)] shadow-sm placeholder:text-[var(--primary-foreground)]/70 hover:border-[var(--muted-foreground)] hover:bg-[var(--muted-foreground)] focus-visible:bg-[var(--muted-foreground)] focus-visible:text-[var(--primary-foreground)]';
 
 /** Text input that parses Spanish-formatted numbers and commits live + on blur. */
@@ -62,6 +66,42 @@ function NumField({
         if (n != null) onCommit(n);
       }}
     />
+  );
+}
+
+/** Column-header padlock. Exactly one column (weights or totals) is locked at a
+ *  time: the locked one stays fixed when the pool changes, the other is derived. */
+function LockToggle({
+  active,
+  onClick,
+  label,
+  tooltip,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  tooltip: string;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={onClick}
+          aria-pressed={active}
+          aria-label={active ? `${label} bloqueados` : `Bloquear ${label}`}
+          className={cn(
+            'inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors',
+            active
+              ? 'cursor-default bg-[var(--muted-foreground)] text-[var(--primary-foreground)]'
+              : 'text-muted-foreground/60 hover:bg-muted hover:text-foreground',
+          )}
+        >
+          {active ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[260px] text-[11px] leading-snug">{tooltip}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -105,6 +145,70 @@ function Stat({
   );
 }
 
+/** One line of the profit → bonus → tax → net cascade. */
+function CascadeRow({
+  label,
+  hint,
+  value,
+  total,
+  color,
+}: {
+  label: string;
+  hint?: string;
+  value: string;
+  total?: boolean;
+  color?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        'flex items-baseline justify-between gap-4 py-2',
+        total && 'border-t border-foreground/20 font-semibold',
+      )}
+    >
+      <div className="min-w-0">
+        <span className={cn('text-sm', !total && 'text-muted-foreground')}>{label}</span>
+        {hint ? <span className="ml-2 text-xs text-muted-foreground/80">{hint}</span> : null}
+      </div>
+      <span className={cn('shrink-0 tabular-nums', total ? 'text-base' : 'text-sm', color)}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+/** Labelled numeric input with a unit suffix and optional help line. */
+function ConfigField({
+  label,
+  help,
+  unit,
+  value,
+  onCommit,
+  className,
+}: {
+  label: string;
+  help?: string;
+  unit: string;
+  value: number;
+  onCommit: (n: number) => void;
+  className?: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <div className="flex items-center gap-1.5">
+        <NumField value={value} onCommit={onCommit} className={className} ariaLabel={label} />
+        <span className="text-muted-foreground">{unit}</span>
+      </div>
+      {help ? <p className="text-xs text-muted-foreground">{help}</p> : null}
+    </div>
+  );
+}
+
+function formatPct(n: number): string {
+  return `${formatNumberInput(n)}%`;
+}
+
 export function BonusView() {
   const ds = useDatasetCtx();
   const { config, loading, saving, update } = useBonus();
@@ -117,14 +221,11 @@ export function BonusView() {
   const usingScenario = ds.showSim && ds.simCount > 0;
 
   // Core derivations. Profit follows the globally active scenario (ds.effective).
+  // The workers' share is taken from the profit BEFORE corporate tax; the
+  // minimum is what the company must keep AFTER bonus and tax.
   const netPre = aggEffective?.totals.net ?? 0;
-  const netAfterTax = netPre * (1 - config.taxRatePct / 100);
-  const meetsMin = netAfterTax >= config.minNetProfit;
-  const rawPool = netAfterTax * (config.distributePct / 100);
-  let pool = 0;
-  if (meetsMin && rawPool > 0) {
-    pool = config.maxDistribute > 0 ? Math.min(rawPool, config.maxDistribute) : rawPool;
-  }
+  const { rawPool, pool, limitedBy, startsAt, fullPctAt } = computeBonusPool(netPre, config);
+  const taxRate = config.taxRatePct / 100;
 
   const locked = config.lockTotals ?? false;
 
@@ -141,12 +242,16 @@ export function BonusView() {
   const weightSum = config.workers.reduce((s, w) => s + workerWeight(w), 0);
   const distributed = config.workers.reduce((s, w) => s + workerTotal(w), 0);
   const hasDistribution = distributed > 0;
-  const overPool = locked && pool > 0 && distributed - pool > 0.01;
+  const overPool = locked && distributed - pool > 0.01;
 
   // The bonus is a deductible expense: it lowers the taxable base, so corporate
-  // tax applies to what's left after distributing it.
-  const resultPre = netPre - distributed;
-  const resultAfterTax = resultPre * (1 - config.taxRatePct / 100);
+  // tax applies to what's left after it. Until workers are set up, the cascade
+  // shows the full pool.
+  const bonus = hasDistribution ? distributed : pool;
+  const taxableBase = netPre - bonus;
+  const tax = Math.max(0, taxableBase) * taxRate;
+  const companyNet = taxableBase - tax;
+  const meetsMin = companyNet >= config.minNetProfit - 0.5;
 
   function updateWorker(id: string, patch: Partial<BonusWorker>) {
     update({ workers: config.workers.map((w) => (w.id === id ? { ...w, ...patch } : w)) });
@@ -176,9 +281,10 @@ export function BonusView() {
     const weightPct = pool > 0 ? (total / pool) * 100 : w.weightPct;
     updateWorker(w.id, locked ? { lockedTotal: total, weightPct } : { weightPct });
   }
-  function toggleLock() {
-    if (locked) {
-      // Unlock: back-derive each weight from its pinned total so nothing jumps.
+  function setLockMode(mode: 'weights' | 'totals') {
+    if ((mode === 'totals') === locked) return;
+    if (mode === 'weights') {
+      // Lock weights: back-derive each weight from its pinned total so nothing jumps.
       update({
         lockTotals: false,
         workers: config.workers.map((w) => ({
@@ -187,7 +293,7 @@ export function BonusView() {
         })),
       });
     } else {
-      // Lock: snapshot the current euro totals as the pinned amounts.
+      // Lock totals: snapshot the current euro totals as the pinned amounts.
       update({
         lockTotals: true,
         workers: config.workers.map((w) => ({ ...w, lockedTotal: (pool * w.weightPct) / 100 })),
@@ -201,8 +307,16 @@ export function BonusView() {
     });
   }
 
-  const taxColor = netAfterTax >= 0 ? 'text-success' : 'text-destructive';
-  const grossColor = netPre >= 0 ? 'text-success' : 'text-destructive';
+  const pctLabel = formatPct(config.distributePct);
+  const poolReason: Record<PoolLimit, string> = {
+    percentage: `${pctLabel} del beneficio antes de impuestos.`,
+    cap: `Limitada por el máximo a repartir. El ${pctLabel} serían ${formatEUR(rawPool)}.`,
+    minimum:
+      pool > 0
+        ? `Reducida para que la empresa conserve ${formatEUR(config.minNetProfit)} netos. El ${pctLabel} serían ${formatEUR(rawPool)}.`
+        : `El beneficio no llega para repartir y conservar ${formatEUR(config.minNetProfit)} netos.`,
+    none: 'Sin beneficio antes de impuestos no hay bolsa.',
+  };
 
   if (loading || !ds.effective) {
     return <div className="p-10 text-center text-muted-foreground">Cargando datos…</div>;
@@ -210,10 +324,10 @@ export function BonusView() {
 
   return (
     <div className="space-y-6">
-      {/* Extended profit KPI */}
+      {/* Profit → bonus → tax → company net */}
       <Card>
         <CardHeader>
-          <CardTitle>Beneficio</CardTitle>
+          <CardTitle>Beneficio y bonus</CardTitle>
           <CardDescription>
             {usingScenario
               ? 'Refleja el escenario activo cargado.'
@@ -223,58 +337,57 @@ export function BonusView() {
         <CardContent className="space-y-5">
           <div className="grid gap-6 sm:grid-cols-3">
             <Stat
-              label="Beneficio bruto (previsto)"
+              label="Beneficio antes de impuestos"
               value={formatEUR(netPre, { sign: true })}
-              color={grossColor}
-              tooltip="Resultado neto previsto del año (ingresos − gastos), antes de impuestos. Refleja el escenario activo si hay uno cargado."
+              color={netPre >= 0 ? 'text-success' : 'text-destructive'}
+              tooltip="Resultado previsto del año (ingresos − gastos), antes de bonus e impuestos. Refleja el escenario activo si hay uno cargado."
+            />
+            <Stat
+              label={hasDistribution ? 'Bonus repartido' : 'Bolsa de bonus'}
+              value={formatEUR(bonus)}
+              color="text-primary"
+              tooltip={`Parte del beneficio antes de impuestos que va a los trabajadores (${pctLabel}), limitada para que la empresa conserve el mínimo neto y por el máximo a repartir.`}
             />
             <div>
-              <InfoLabel
-                label="Impuesto de Sociedades"
-                tooltip="Tipo impositivo sobre el beneficio. Editable; por defecto 23% (pyme pequeña). Se guarda automáticamente."
+              <Stat
+                label="Beneficio neto empresa"
+                value={formatEUR(companyNet, { sign: true })}
+                color={meetsMin ? 'text-success' : 'text-destructive'}
+                tooltip="Lo que le queda a la empresa tras pagar el bonus y el Impuesto de Sociedades. El bonus es gasto deducible, así que reduce la base imponible."
               />
-              <div className="mt-1 flex items-center gap-1.5">
-                <NumField
-                  value={config.taxRatePct}
-                  onCommit={(n) => update({ taxRatePct: n })}
-                  className="w-20"
-                  ariaLabel="Tipo de impuesto de sociedades (%)"
-                />
-                <span className="text-muted-foreground">%</span>
-              </div>
-              <div className="mt-1 text-xs text-muted-foreground">
-                impuestos: {formatEUR(netPre - netAfterTax)}
+              <div
+                className={cn(
+                  'mt-1 text-xs',
+                  meetsMin ? 'text-muted-foreground' : 'text-destructive',
+                )}
+              >
+                {meetsMin ? 'Cumple' : 'No cumple'} el mínimo de {formatEUR(config.minNetProfit)}
               </div>
             </div>
-            <Stat
-              label="Beneficio neto (después de impuestos)"
-              value={formatEUR(netAfterTax, { sign: true })}
-              color={taxColor}
-              tooltip="Beneficio bruto menos el Impuesto de Sociedades, SIN repartir bonus. Orientativo de lo que quedaría si no se reparte la bolsa."
-            />
           </div>
 
-          {hasDistribution ? (
-            <div className="grid gap-6 border-t pt-5 sm:grid-cols-3">
-              <Stat
-                label="Resultado sin impuestos (tras bonus)"
-                value={formatEUR(resultPre, { sign: true })}
-                color={resultPre >= 0 ? 'text-success' : 'text-destructive'}
-                tooltip="Beneficio bruto menos el total repartido en bonus. Aún no se han aplicado impuestos."
-              />
-              <Stat
-                label="Total repartido"
-                value={formatEUR(distributed)}
-                tooltip="Suma de los importes asignados a cada trabajador. Es la parte de la bolsa efectivamente repartida según los pesos."
-              />
-              <Stat
-                label="Resultado con impuestos (tras bonus)"
-                value={formatEUR(resultAfterTax, { sign: true })}
-                color={resultAfterTax >= 0 ? 'text-success' : 'text-destructive'}
-                tooltip="Resultado final real: (beneficio bruto − bonus) con el Impuesto de Sociedades aplicado. El bonus es gasto deducible, así que reduce la base imponible."
-              />
-            </div>
-          ) : null}
+          <div className="rounded-md border border-input bg-muted/30 px-4 py-1">
+            <CascadeRow label="Beneficio antes de impuestos" value={formatEUR(netPre)} />
+            <CascadeRow
+              label={hasDistribution ? '− Bonus repartido' : '− Bolsa de bonus'}
+              hint={
+                limitedBy === 'percentage' ? `${pctLabel} antes de impuestos` : 'limitada'
+              }
+              value={formatEUR(-bonus)}
+            />
+            <CascadeRow label="Base imponible" value={formatEUR(taxableBase)} total />
+            <CascadeRow
+              label="− Impuesto de Sociedades"
+              hint={formatPct(config.taxRatePct)}
+              value={formatEUR(-tax)}
+            />
+            <CascadeRow
+              label="Beneficio neto empresa"
+              value={formatEUR(companyNet)}
+              color={meetsMin ? 'text-success' : 'text-destructive'}
+              total
+            />
+          </div>
         </CardContent>
       </Card>
 
@@ -286,70 +399,70 @@ export function BonusView() {
             <CardDescription>Define cómo se calcula la bolsa a repartir.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">
-                Mínimo de beneficio neto (después de impuestos)
-              </Label>
-              <div className="flex items-center gap-1.5">
-                <NumField
-                  value={config.minNetProfit}
-                  onCommit={(n) => update({ minNetProfit: n })}
-                  ariaLabel="Mínimo de beneficio neto"
-                />
-                <span className="text-muted-foreground">€</span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Por debajo de este beneficio no se reparte nada.
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">% del beneficio a repartir</Label>
-              <div className="flex items-center gap-1.5">
-                <NumField
-                  value={config.distributePct}
-                  onCommit={(n) => update({ distributePct: n })}
-                  className="w-28"
-                  ariaLabel="Porcentaje a repartir"
-                />
-                <span className="text-muted-foreground">%</span>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Máximo a repartir</Label>
-              <div className="flex items-center gap-1.5">
-                <NumField
-                  value={config.maxDistribute}
-                  onCommit={(n) => update({ maxDistribute: n })}
-                  ariaLabel="Máximo a repartir"
-                />
-                <span className="text-muted-foreground">€</span>
-              </div>
-              <p className="text-xs text-muted-foreground">0 = sin límite.</p>
-            </div>
+            <ConfigField
+              label="% para trabajadores (antes de impuestos)"
+              help="Porcentaje del beneficio antes del Impuesto de Sociedades."
+              unit="%"
+              value={config.distributePct}
+              onCommit={(n) => update({ distributePct: n })}
+              className="w-28"
+            />
+            <ConfigField
+              label="Beneficio neto mínimo para la empresa"
+              help="Después de bonus e impuestos. La bolsa se reduce lo necesario para garantizarlo."
+              unit="€"
+              value={config.minNetProfit}
+              onCommit={(n) => update({ minNetProfit: n })}
+            />
+            <ConfigField
+              label="Máximo a repartir"
+              help="0 = sin límite."
+              unit="€"
+              value={config.maxDistribute}
+              onCommit={(n) => update({ maxDistribute: n })}
+            />
+            <ConfigField
+              label="Impuesto de Sociedades"
+              help="Por defecto 23% (pyme pequeña)."
+              unit="%"
+              value={config.taxRatePct}
+              onCommit={(n) => update({ taxRatePct: n })}
+              className="w-20"
+            />
 
             <div className="rounded-md border border-input bg-muted/40 p-3">
               <InfoLabel
                 label="Bolsa de bonus disponible"
-                tooltip="% del beneficio neto (después de impuestos) a repartir, limitado por el máximo. Es 0 si el beneficio neto no llega al mínimo."
+                tooltip="El menor de: % para trabajadores sobre el beneficio antes de impuestos, lo que permite conservar el beneficio neto mínimo, y el máximo a repartir."
               />
               <div className="text-2xl font-semibold tabular-nums text-primary">
                 {formatEUR(pool)}
               </div>
-              {!meetsMin ? (
-                <p className="mt-1 text-xs text-destructive">
-                  El beneficio neto no alcanza el mínimo configurado.
+              <p
+                className={cn(
+                  'mt-1 text-xs',
+                  pool > 0 ? 'text-muted-foreground' : 'text-destructive',
+                )}
+              >
+                {poolReason[limitedBy]}
+              </p>
+              {Number.isFinite(startsAt) && config.distributePct > 0 ? (
+                <p className="mt-2 border-t pt-2 text-xs text-muted-foreground">
+                  Se reparte a partir de {formatEUR(startsAt)} de beneficio antes de impuestos
+                  {Number.isFinite(fullPctAt)
+                    ? `; el ${pctLabel} completo a partir de ${formatEUR(fullPctAt)}.`
+                    : '.'}
                 </p>
               ) : null}
             </div>
           </CardContent>
         </Card>
-
         <Card className="lg:col-span-3">
           <CardHeader className="flex flex-row items-center justify-between space-y-0">
             <div>
               <CardTitle>Reparto por trabajador</CardTitle>
               <CardDescription>
-                Edita el peso (%) o el total (€); lo demás se recalcula.
+                Edita el peso (%) o el total (€). El candado marca qué columna se mantiene fija si cambia la bolsa.
               </CardDescription>
             </div>
             <Button size="sm" onClick={addWorker}>
@@ -367,42 +480,38 @@ export function BonusView() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Trabajador</TableHead>
-                    <TableHead className="w-32">Peso (%)</TableHead>
                     <TableHead
-                      className={cn(
-                        'w-40 transition-colors',
-                        locked && 'border-l border-primary/30 bg-primary/10 text-primary',
-                      )}
+                      className={cn('w-32 transition-colors', !locked && lockedHeadClass)}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <span>Peso (%)</span>
+                        <LockToggle
+                          active={!locked}
+                          onClick={() => setLockMode('weights')}
+                          label="pesos"
+                          tooltip={
+                            !locked
+                              ? 'Pesos bloqueados: el % de cada trabajador se mantiene fijo y su total (€) se recalcula si cambian el beneficio o la simulación.'
+                              : 'Bloquea el peso (%) de cada trabajador: los totales (€) se recalcularán con la bolsa.'
+                          }
+                        />
+                      </div>
+                    </TableHead>
+                    <TableHead
+                      className={cn('w-40 transition-colors', locked && lockedHeadClass)}
                     >
                       <div className="flex items-center gap-1.5">
                         <span>Total (€)</span>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              onClick={toggleLock}
-                              aria-pressed={locked}
-                              aria-label={locked ? 'Desbloquear totales' : 'Bloquear totales'}
-                              className={cn(
-                                'inline-flex h-6 w-6 items-center justify-center rounded-md transition-colors',
-                                locked
-                                  ? 'bg-[var(--muted-foreground)] text-[var(--primary-foreground)] hover:bg-[var(--muted-foreground)] hover:text-[var(--primary-foreground)]'
-                                  : 'text-muted-foreground/60 hover:bg-muted hover:text-foreground',
-                              )}
-                            >
-                              {locked ? (
-                                <Lock className="h-3.5 w-3.5" />
-                              ) : (
-                                <Unlock className="h-3.5 w-3.5" />
-                              )}
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-[260px] text-[11px] leading-snug">
-                            {locked
-                              ? 'Totales bloqueados: el € de cada trabajador se mantiene fijo aunque cambien el beneficio, los porcentajes o la simulación. Pulsa para desbloquear.'
-                              : 'Bloquea el total (€) de cada trabajador para conservar la previsión aunque cambien el beneficio o la simulación.'}
-                          </TooltipContent>
-                        </Tooltip>
+                        <LockToggle
+                          active={locked}
+                          onClick={() => setLockMode('totals')}
+                          label="totales"
+                          tooltip={
+                            locked
+                              ? 'Totales bloqueados: el € de cada trabajador se mantiene fijo y su peso (%) se recalcula si cambian el beneficio o la simulación.'
+                              : 'Bloquea el total (€) de cada trabajador para conservar la previsión aunque cambien el beneficio o la simulación.'
+                          }
+                        />
                       </div>
                     </TableHead>
                     <TableHead className="w-12" />
@@ -420,23 +529,19 @@ export function BonusView() {
                           className={bonusFieldClass}
                         />
                       </TableCell>
-                      <TableCell>
+                      <TableCell className={cn('transition-colors', !locked && lockedCellClass)}>
                         <NumField
                           value={workerWeight(w)}
                           onCommit={(n) => setWorkerWeight(w, n)}
+                          className={cn(!locked && lockedFieldClass)}
                           ariaLabel={`Peso de ${w.name || 'trabajador'}`}
                         />
                       </TableCell>
-                      <TableCell
-                        className={cn(
-                          'transition-colors',
-                          locked && 'border-l border-primary/20 bg-primary/10',
-                        )}
-                      >
+                      <TableCell className={cn('transition-colors', locked && lockedCellClass)}>
                         <NumField
                           value={workerTotal(w)}
                           onCommit={(n) => setWorkerTotal(w, n)}
-                          className={cn(locked && lockedTotalFieldClass)}
+                          className={cn(locked && lockedFieldClass)}
                           ariaLabel={`Total de ${w.name || 'trabajador'}`}
                         />
                       </TableCell>
@@ -473,8 +578,8 @@ export function BonusView() {
                       className={cn('tabular-nums', overPool ? 'text-destructive' : 'text-muted-foreground')}
                     >
                       Repartido: {formatEUR(distributed)} / {formatEUR(pool)}
-                      {netAfterTax > 0
-                        ? ` (${((distributed / netAfterTax) * 100).toFixed(1)}% del beneficio)`
+                      {netPre > 0
+                        ? ` (${((distributed / netPre) * 100).toFixed(1)}% del beneficio antes de impuestos)`
                         : ''}
                     </span>
                   </div>
@@ -487,7 +592,13 @@ export function BonusView() {
                 {overPool ? (
                   <p className="text-xs text-destructive">
                     Los totales bloqueados ({formatEUR(distributed)}) superan la bolsa disponible (
-                    {formatEUR(pool)}). Se mantienen tal cual; desbloquea el candado para reajustarlos.
+                    {formatEUR(pool)}). Se mantienen tal cual; bloquea los pesos para reajustarlos a la bolsa.
+                  </p>
+                ) : null}
+                {!meetsMin && hasDistribution ? (
+                  <p className="text-xs text-destructive">
+                    Con este reparto la empresa se queda en {formatEUR(companyNet)} netos, por debajo
+                    del mínimo de {formatEUR(config.minNetProfit)}.
                   </p>
                 ) : null}
               </div>

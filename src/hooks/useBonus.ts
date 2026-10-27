@@ -4,8 +4,8 @@ import type { BonusConfig } from '@/lib/types';
 
 export const DEFAULT_BONUS_CONFIG: BonusConfig = {
   taxRatePct: 23,
-  minNetProfit: 0,
-  distributePct: 0,
+  minNetProfit: 10000,
+  distributePct: 40,
   maxDistribute: 0,
   lockTotals: false,
   workers: [],
